@@ -3,7 +3,13 @@
   "version": "0.0.0",
   "description": "Replication protocol based on scuttlebutt logs and causal linking",
   "main": "index.js",
-  "dependencies": {},
+  "dependencies": {
+    "from2": "^1.2.0",
+    "lexicographic-integer": "^1.1.0",
+    "pump": "^1.0.0",
+    "stream-collector": "^1.0.1",
+    "through2": "^0.6.3"
+  },
   "devDependencies": {},
   "repository": {
     "type": "git",
