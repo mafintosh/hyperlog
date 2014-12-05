@@ -70,20 +70,20 @@ Logs.prototype.entries = function(peer, cb) {
   return collect(pump(rs, through.obj(format)), cb)
 }
 
-var toKey = function(self, peer, seq) {
-  return self.prefix+peer+'!'+lexint.pack(seq, 'hex')
+Logs.prototype.key = function(peer, seq) {
+  return this.prefix+peer+'!'+lexint.pack(seq, 'hex')  
 }
 
 Logs.prototype.put = function(peer, seq, value, cb) {
-  this.db.put(toKey(this, peer, seq), value, cb)
+  this.db.put(this.key(peer, seq), value, cb)
 }
 
 Logs.prototype.get = function(peer, seq, cb) {
-  this.db.get(toKey(this, peer, seq), {valueEncoding:'binary'}, cb)  
+  this.db.get(this.key(peer, seq), {valueEncoding:'binary'}, cb)  
 }
 
 Logs.prototype.del = function(peer, seq, cb) {
-  this.db.del(toKey(this, peer, seq), cb)
+  this.db.del(this.key(peer, seq), cb)
 }
 
 module.exports = Logs
