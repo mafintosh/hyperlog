@@ -1,73 +1,46 @@
-var crypto = require('crypto')
 var lexint = require('lexicographic-integer')
-var pump = require('pump')
 var through = require('through2')
 var from = require('from2')
 var collect = require('stream-collector')
+var pump = require('pump')
 
-var LOGS = 'logs!'
+var encode = JSON.stringify
+var decode = JSON.parse
 
-// this could probably go into a new module ...
-
-var Logs = function(db) {
-  if (!(this instanceof Logs)) return new Logs(db)
+var Logs = function(prefix, db) {
+  if (!(this instanceof Logs)) return new Logs(prefix, db)
+  this.prefix = prefix+'!'
   this.db = db
 }
 
 Logs.prototype.peers = function(cb) {
   var self = this
-  var ptr = LOGS
+  var prev = null
 
   var rs = from.obj(function(size, cb) {
     var keys = self.db.createKeyStream({
-      gt: ptr,
-      lt: LOGS+'\xff',
+      gt: self.prefix+(prev ? prev+'!\xff' : ''),
+      lt: self.prefix+'\xff',
       limit: 1
     })
-    
-    collect(keys, function(err, keys) {
-      if (err) return cb(err)
-      if (!keys.length) return cb(null, null)
 
-      var peer = keys[0].slice(LOGS.length, keys[0].lastIndexOf('!'))
-      ptr = LOGS+peer+'!\xff'
-      cb(null, peer)
+    collect(keys, function(err, list) {
+      if (err) return cb(err)
+      if (!list.length) return cb(null, null)
+      prev = list[0].slice(self.prefix.length, list[0].indexOf('!', self.prefix.length))
+      cb(null, prev)
     })
   })
 
   return collect(rs, cb)
 }
 
-Logs.prototype.entries = function(peer, opts, cb) {
-  if (typeof opts === 'function') return this.entries(peer, null, opts)
-  if (!opts) opts = {}
-
-  var rs = this.db.createReadStream({
-    gt: LOGS+peer+'!'+lexint.pack(opts.since || 0, 'hex'),
-    lt: LOGS+peer+'!\xff'
-  })
-
-  var format = through.obj(function(data, enc, cb) {
-    var sep = data.key.lastIndexOf('!')
-    var seq = lexint.unpack(data.key.slice(sep+1), 'hex')
-    var peer = data.key.slice(LOGS.length, sep)
-
-    cb(null, {
-      peer: peer,
-      seq: seq,
-      entry: data.value
-    })
-  })
-
-  return collect(pump(rs, format), cb)
-}
-
 Logs.prototype.head = function(peer, cb) {
   var rs = this.db.createKeyStream({
-    gt: LOGS+peer+'!',
-    lt: LOGS+peer+'!\xff',
-    reverse: true,
-    limit: 1
+    gt: this.prefix+peer+'!',
+    lt: this.prefix+peer+'!\xff',
+    limit: 1,
+    reverse: true
   })
 
   collect(rs, function(err, keys) {
@@ -77,12 +50,47 @@ Logs.prototype.head = function(peer, cb) {
   })
 }
 
-Logs.prototype.get = function(peer, seq, cb) {
-  this.db.get(LOGS+peer+'!'+lexint.pack(seq, 'hex'), {valueEncoding:'binary'}, cb)
+Logs.prototype.entries = function(peer, cb) {
+  var self = this
+
+  var rs = this.db.createReadStream({
+    gt: this.prefix+peer+'!',
+    lt: this.prefix+peer+'!\xff',
+    valueEncoding: 'binary'
+  })
+
+  var format = function(data, enc, cb) {
+    cb(null, {
+      peer: data.key.slice(this.prefix.length, data.key.indexOf('!', this.prefix.length)),
+      seq: lexint.unpack(data.key.slice(data.key.lastIndexOf('!')+1), 'hex'),
+      value: data.value
+    })
+  }
+
+  return collect(pump(rs, through.obj(format)), cb)
 }
 
-Logs.prototype.put = function(peer, seq, data, cb) {
-  this.db.put(LOGS+peer+'!'+lexint.pack(seq, 'hex'), data, cb)
+Logs.prototype.put = function(peer, seq, value, cb) {
+  var key = this.prefix+peer+'!'+lexint.pack(seq, 'hex')
+  this.db.put(key, value, cb)
+}
+
+Logs.prototype.get = function(peer, seq, cb) {
+  var key = this.prefix+peer+'!'+lexint.pack(seq, 'hex')
+  this.db.get(key, {valueEncoding:'binary'}, cb)  
 }
 
 module.exports = Logs
+
+if (require.main !== module) return
+
+var d = Logs('deltas', require('memdb')())
+
+d.put('hi', 1, new Buffer('lolz'), function() {
+  d.put('hello', 1, new Buffer('sup'), function() {
+    //d.get('hello', 1, console.log)
+    // d.entries('hello').on('data', console.log)
+    //d.head('hello', console.log)
+    d.peers(console.log)
+  })
+})
