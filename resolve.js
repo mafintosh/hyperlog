@@ -1,57 +1,9 @@
 var debug = require('debug')('vector-logs.resolve')
 var through = require('through2')
 var pump = require('pump')
+var stack = require('./stack')
 
 var noop = function() {}
-
-var stack = function(opts) { // TODO: add level swap and move to cache
-  var that = {}
-  var prev = {}
-  var unique = opts && !!opts.unique
-
-  that.top = null
-
-  that.push = function(key, cb) {
-    if (Array.isArray(key)) {
-      for (var i = 0; i < key.length-1; i++) that.push(key[i])
-      key = key[key.length-1]
-    }
-
-    if (!cb) cb = noop
-    if (prev.hasOwnProperty(key)) return cb()
-    prev[key] = that.top
-    that.top = key
-    cb()
-  }
-
-  that.has = function(key, cb) {
-    cb(null, !!prev[key])
-  }
-
-  that.iterator = function(until) {
-    var top = that.top
-    return function(cb) {
-      if (top === until) return cb(null, null)
-      var next = top
-      top = prev[next] || null
-      cb(null, next)
-    }
-  }
-
-  that.peek = function(cb) {
-    cb(null, that.top)
-  }
-
-  that.pop = function(cb) {
-    if (!cb) cb = noop
-    var popped = that.top    
-    that.top = prev[that.top] || null
-    delete prev[popped]
-    cb(null, popped)
-  }
-
-  return that
-}
 
 var split = function(key) {
   key = key.split('!')
