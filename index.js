@@ -1,6 +1,7 @@
 var crypto = require('crypto')
 var through = require('through2')
 var pump = require('pump')
+var mutexify = require('mutexify')
 var collect = require('stream-collector')
 var logs = require('./logs')
 var replicate = require('./replicate')
@@ -17,6 +18,7 @@ var Vector = function(db, opts) {
   if (!opts.id) throw new Error('id is currently required')
 
   this.id = opts.id
+  this.lock = mutexify()
   this.db = db
   this.deltas = logs('deltas', db)
   this.graph = logs('graph', db)
@@ -102,9 +104,23 @@ Vector.prototype.add = function(links, value, opts, cb) {
   loop()
 }
 
-// move to submodule?
-// assumes that is being applied in the right order etc
+// TODO: these move to submodule?
+// right we just lock the world when doing writes since its easy
+// this can easily be optimized later
+
 Vector.prototype.commit = function(batch, node, cb) {
+  var self = this
+  this.lock(function(release) {
+    self.unsafeCommit(batch, node, function(err, node) {
+      if (err) return release(cb, err)
+      release(cb, null, node)
+    })
+  })
+}
+
+// unsafe since this assumes that is being applied in the right order etc
+
+Vector.prototype.unsafeCommit = function(batch, node, cb) {
   if (!cb) cb = noop
 
   var self = this
