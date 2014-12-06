@@ -50,12 +50,18 @@ Logs.prototype.head = function(peer, cb) {
   })
 }
 
-Logs.prototype.entries = function(peer, cb) {
+Logs.prototype.entries = function(peer, opts, cb) {
+  if (typeof opts === 'function') return this.entries(peer, null, opts)
+  if (!opts) opts = {}
+
   var self = this
 
+  var since = opts.since ? lexint.pack(opts.since, 'hex') : ''
+  var until = opts.until ? lexint.pack(opts.until, 'hex') : '\xff'
+
   var rs = this.db.createReadStream({
-    gt: this.prefix+peer+'!',
-    lt: this.prefix+peer+'!\xff',
+    gt: this.prefix+peer+'!'+since,
+    lt: this.prefix+peer+'!'+until,
     valueEncoding: 'binary'
   })
 
