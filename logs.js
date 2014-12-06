@@ -4,9 +4,6 @@ var from = require('from2')
 var collect = require('stream-collector')
 var pump = require('pump')
 
-var encode = JSON.stringify
-var decode = JSON.parse
-
 var Logs = function(prefix, db) {
   if (!(this instanceof Logs)) return new Logs(prefix, db)
   this.prefix = prefix+'!'
@@ -35,19 +32,27 @@ Logs.prototype.peers = function(cb) {
   return collect(rs, cb)
 }
 
-Logs.prototype.head = function(peer, cb) {
-  var rs = this.db.createKeyStream({
-    gt: this.prefix+peer+'!',
-    lt: this.prefix+peer+'!\xff',
+var peekLog = function(self, peer, reverse, cb) {
+  var rs = self.db.createKeyStream({
+    gt: self.prefix+peer+'!',
+    lt: self.prefix+peer+'!\xff',
     limit: 1,
-    reverse: true
+    reverse: reverse
   })
 
   collect(rs, function(err, keys) {
     if (err) return cb(err)
     if (!keys.length) return cb(null, 0)
     cb(null, lexint.unpack(keys[0].slice(keys[0].lastIndexOf('!')+1), 'hex'))
-  })
+  })  
+}
+
+Logs.prototype.tail = function(peer, cb) {
+  peekLog(this, peer, false, cb)
+}
+
+Logs.prototype.head = function(peer, cb) {
+  peekLog(this, peer, true, cb)
 }
 
 Logs.prototype.entries = function(peer, opts, cb) {
