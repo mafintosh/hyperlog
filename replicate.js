@@ -1,48 +1,137 @@
 var duplexify = require('duplexify')
+var protobuf = require('protocol-buffers')
 var through = require('through2')
-var encoding = require('./encoding')
+var lpstream = require('length-prefixed-stream')
+var pump = require('pump')
+var messages = require('./messages')
 
 var noop = function() {}
 
-var replicate = function(logs) {  
-  var self = logs // yolo
+var encoder = function(byte) {
+  switch (byte) {
+    case 0: return messages.Handshake
+    case 1: return messages.Head
+    case 2: return messages.Head
+    case 3: return messages.Head
+    case 4: return messages.Node
+    case 5: return messages.Fin
+  }
+
+  throw new Error('Unknown byte type: '+byte)  
+}
+
+var toByteType = function(type) {
+  switch (type) {
+    case 'handshake': return 0
+    case 'head':      return 1
+    case 'want':      return 2
+    case 'end':       return 3
+    case 'node':      return 4
+    case 'fin':       return 5
+  }
+
+  return -1
+}
+
+var toStringType = function(byte) {
+  switch (byte) {
+    case 0: return 'handshake'
+    case 1: return 'head'
+    case 2: return 'want'
+    case 3: return 'end'
+    case 4: return 'node'
+    case 5: return 'fin'
+  }
+
+  return null
+}
+
+var protocol = function() {
+  var incoming = through.obj(function(data, enc, cb) {
+    var b = data[0]
+    var t = toStringType(b)
+
+    if (!t) return cb(new Error('Unknown byte type: '+b))
+
+    data = encoder(b).decode(data, 1)
+    data.type = t
+
+    cb(null, data)
+  })
+
+  var outgoing = through.obj(function(data, enc, cb) {
+    var t = data.type || 'node'
+    var b = toByteType(t)
+
+    if (b < 0) return cb(new Error('Unknown string type '+t))
+
+    var e = encoder(b)
+    var len = e.encodingLength(data)+1
+    var buf = new Buffer(len)
+
+    buf[0] = b
+    cb(null, e.encode(data, buf, 1))
+  })
+
+  var dec = lpstream.decode()
+  var enc = lpstream.encode()
+  var result = duplexify(dec, enc)
+
+  pump(dec, incoming)
+  pump(outgoing, enc)
+
+  result.incoming = incoming
+  result.outgoing = outgoing
+
+  return result
+}
+
+// TODO: completely refactor this
+var replicate = function(vector) {  
+  var stream = protocol()
+
   var handshook = false
+  var pending = 0
   var wanting = {}
-  var done = {}
   var fins = 0
 
   var head = function(peer, cb) {
-    self.graph.head(peer, function(_, a) {
+    vector.graph.head(peer, function(_, a) {
       cb(a || 0)
     })
   }
 
   var want = function(peer, remote, cb) {
-    if (wanting[peer] || done[peer]) return cb()
+    if (wanting[peer]) return cb()
     wanting[peer] = true
+    pending++
 
     head(peer, function(seq) {
-      if (seq >= remote) return cb()
-      out.write({type:'want', peer:peer, seq:seq})
+      if (seq >= remote) {
+        pending--
+        return cb()
+      }
+      stream.outgoing.write({type:'want', peer:peer, seq:seq})
       cb()
     })
   }
 
   var fin = function() {
-    out.write({type:'fin'})
+    stream.outgoing.write({type:'fin'})
     onfin(null, noop)
   }
 
   var onhandshake = function(handshake, cb) {
     handshook = true
     
+    var heads = handshake.heads
     var loop = function() {
-      if (!handshake.length) {
-        if (!Object.keys(wanting).length) fin()
+      if (!heads.length) {
+        if (!pending) fin()
         return cb()
       }
 
-      var next = handshake.shift()
+      var next = heads.shift()
       want(next.peer, next.seq, loop)
     }
 
@@ -50,27 +139,24 @@ var replicate = function(logs) {
   }
 
   var onwant = function(data, cb) {
-    var entries = self.graph.entries(data.peer, {since:data.seq})
+    var nodes = vector.graph.nodes(data.peer, {since:data.seq})
 
-    entries.on('end', function() {
-      out.write({type:'end', peer:data.peer})
+    nodes.on('end', function() {
+      stream.outgoing.write({type:'end', peer:data.peer, seq:data.seq})
     })
 
-    entries.pipe(out, {end:false})
+    nodes.pipe(stream.outgoing, {end:false})
     cb()
   }
 
   var onend = function(data, cb) {
-    done[data.peer] = true
-    delete wanting[data.peer]
-    if (!Object.keys(wanting).length) fin()
+    if (!--pending) fin()
     cb()
   }
 
   var onfin = function(data, cb) {
     if (++fins < 2) return cb()
-    out.end()
-    inc.end()
+    stream.outgoing.end()
     if (cb) cb()
   }
 
@@ -79,17 +165,20 @@ var replicate = function(logs) {
     if (data.type === 'end') return onend(data, cb)
     if (data.type === 'fin') return onfin(data, cb)
 
-    var node = encoding.node.decode(data.value)
+    // TODO: sanity check this inregards to log order etc
 
     var done = function() {
-      self.deltas.put(data.peer, data.seq, data.value, cb)
+      var key = vector.deltas.key(data.peer, data.seq)
+      var value = vector.deltas.value(data)
+
+      vector.db.put(key, value, cb)
     }
 
     var i = 0
     var loop = function() {
-      if (i >= node.links.length) return done()
+      if (i >= data.links.length) return done()
 
-      var ln = node.links[i++]
+      var ln = data.links[i++]
       var peer = ln.slice(0, ln.indexOf('!'))
       var seq = parseInt(ln.slice(peer.length+1, ln.indexOf('!', peer.length+1)), 10)
 
@@ -99,19 +188,15 @@ var replicate = function(logs) {
     loop()
   }
 
-  var out = through.obj()
-  var inc = through.obj(function(data, enc, cb) {
+  var parse = through.obj(function(data, enc, cb) {
     if (!handshook) onhandshake(data, cb)
     else ondata(data, cb)
   })
 
-  var stream = duplexify.obj()
-
-  stream.setReadable(out)
-  logs.heads(function(err, heads) {
+  vector.heads(function(err, heads) {
     if (err) return stream.destroy(err)
-    out.write(heads)
-    stream.setWritable(inc)
+    stream.outgoing.write({type:'handshake', heads:heads})
+    stream.incoming.pipe(parse)
   })
 
   return stream

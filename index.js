@@ -5,7 +5,6 @@ var collect = require('stream-collector')
 var logs = require('./logs')
 var replicate = require('./replicate')
 var resolve = require('./resolve')
-var encoding = require('./encoding')
 
 var noop = function() {}
 
@@ -61,7 +60,8 @@ Vector.prototype.get = function(key, cb) {
 
   this.graph.get(peer, seq, function(err, node) {
     if (err) return cb(err)
-    cb(null, encoding.node.decode(node))
+    if (key !== node.key) return cb(new Error('checksum mismatch'))
+    cb(null, node)
   })
 }
 
@@ -70,6 +70,7 @@ Vector.prototype.add = function(links, value, opts, cb) {
   if (!opts) opts = {}
   if (!links) links = []
   if (!Array.isArray(links)) links = [links]
+  if (!Buffer.isBuffer(value)) value = new Buffer(value)
   if (!cb) cb = noop
 
   var self = this
@@ -118,7 +119,7 @@ Vector.prototype.commit = function(batch, node, cb) {
     batch.push({
       type: 'put',
       key: self.graph.key(node.peer, node.seq),
-      value: encoding.node.encode(node)
+      value: self.graph.value(node)
     })
 
     self.db.batch(batch, function(err) {

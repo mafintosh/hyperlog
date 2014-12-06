@@ -1,6 +1,5 @@
 var debug = require('debug')('vector-logs.resolve')
 var through = require('through2')
-var encoding = require('./encoding')
 var pump = require('pump')
 
 var noop = function() {}
@@ -54,24 +53,6 @@ var stack = function(opts) { // TODO: add level swap and move to cache
   return that
 }
 
-var taker = function(stream) {
-  var pending = null
-
-  stream.on('readable', function() {
-    if (!pending) return
-    var fn = pending
-    pending = null
-    fn(stream.read())
-  })
-
-  return function(cb) {
-    if (pending) throw new Error('read in progress')
-    var doc = stream.read()
-    if (doc) return cb(doc)
-    pending = cb
-  }
-}
-
 var split = function(key) {
   key = key.split('!')
   return [key[0], parseInt(key[1], 16), key[2]]
@@ -81,7 +62,7 @@ var join = function(peer, seq, hash) {
   return peer+'!'+seq.toString(16)+'!'+hash
 }
 
-var resolve = function(logs, cb) {
+var resolve = function(vector, cb) {
   var s = stack()
 
   var visit = function(ptr, cb) {
@@ -94,10 +75,8 @@ var resolve = function(logs, cb) {
       
       var pair = split(key)
       
-      logs.deltas.get(pair[0], pair[1], function(err, entry) {
+      vector.deltas.get(pair[0], pair[1], function(err, node) {
         if (err) return cb(err)
-
-        var node = encoding.node.decode(entry)
 
         var i = 0
         var loop = function(err) {
@@ -107,10 +86,10 @@ var resolve = function(logs, cb) {
           var ln = node.links[i++]
           var pair = split(ln)
 
-          logs.graph.get(pair[0], pair[1], function(err) {
+          vector.graph.get(pair[0], pair[1], function(err) {
             if (!err) return loop() // no err - we already have it
 
-            logs.deltas.tail(pair[0], function(err, tail) {
+            vector.deltas.tail(pair[0], function(err, tail) {
               if (err) return cb(err)
 
               var keys = []
@@ -128,7 +107,7 @@ var resolve = function(logs, cb) {
   }
 
   var onpeer = function(peer, enc, cb) {
-    var entries = logs.deltas.entries(peer)
+    var nodes = vector.deltas.nodes(peer, {values:false})
 
     var onlog = function(data, enc, cb) {
       s.push(join(data.peer, data.seq, ''), function(err) {
@@ -139,15 +118,13 @@ var resolve = function(logs, cb) {
             if (err || !key) return cb(err)
 
             var pair = split(key)
-            key = logs.deltas.key(pair[0], pair[1])
 
             debug('applying %s(%d) to the graph', pair[0], pair[1])
 
-            logs.db.get(key, {valueEncoding:'binary'}, function(err, val) {
+            vector.deltas.get(pair[0], pair[1], function(err, node) {
               if (err) return cb(err)
 
-              var node = encoding.node.decode(val)
-              logs.commit([{type:'del', key:key}], node, function(err) {
+              vector.commit([{type:'del', key:vector.deltas.key(pair[0], pair[1])}], node, function(err) {
                 if (err) return cb(err)
                 s.pop(loop)
               })
@@ -168,10 +145,10 @@ var resolve = function(logs, cb) {
       })
     }
 
-    pump(entries, through.obj(onlog), cb)
+    pump(nodes, through.obj(onlog), cb)
   }
 
-  pump(logs.deltas.peers(), through.obj(onpeer), cb)
+  pump(vector.deltas.peers(), through.obj(onpeer), cb)
 }
 
 module.exports = resolve
