@@ -3,9 +3,9 @@ var through = require('through2')
 var pump = require('pump')
 var mutexify = require('mutexify')
 var collect = require('stream-collector')
-var logs = require('./logs')
-var replicate = require('./replicate')
-var resolve = require('./resolve')
+var logs = require('./lib/logs')
+var replicate = require('./lib/replicate')
+var resolve = require('./lib/resolve')
 
 var noop = function() {}
 
