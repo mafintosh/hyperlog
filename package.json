@@ -1,5 +1,5 @@
 {
-  "name": "hypergraph",
+  "name": "hyperlog",
   "version": "0.0.0",
   "description": "Replication protocol based on scuttlebutt logs and causal linking",
   "main": "index.js",
@@ -20,12 +20,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mafintosh/hypergraph.git"
+    "url": "https://github.com/mafintosh/hyperlog.git"
   },
   "author": "Mathias Buus (@mafintosh)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mafintosh/hypergraph/issues"
+    "url": "https://github.com/mafintosh/hyperlog/issues"
   },
-  "homepage": "https://github.com/mafintosh/hypergraph"
+  "homepage": "https://github.com/mafintosh/hyperlog"
 }
