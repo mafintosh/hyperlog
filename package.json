@@ -5,6 +5,7 @@
   "main": "index.js",
   "dependencies": {
     "debug": "^2.1.0",
+    "duplexify": "^3.2.0",
     "from2": "^1.2.0",
     "length-prefixed-stream": "^1.0.1",
     "lexicographic-integer": "^1.1.0",
