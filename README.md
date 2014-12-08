@@ -1,4 +1,4 @@
-# vector-logs
+# hypergraph
 
 Database that replicates based on scuttlebutt logs and causal linking
 
@@ -6,10 +6,10 @@ Currently a work in progress.
 See [pfraze/phoenix#170](https://github.com/pfraze/phoenix/issues/170) for more info
 
 ``` js
-var vector = require('vector-logs')
+var hypergraph = require('hypergraph')
 
 // currently you NEED to pass a globally unique id - this will change in the future
-var graph = vector(db, {id:'mathias'}) // where db is a levelup instance
+var graph = hypergraph(db, {id:'mathias'}) // where db is a levelup instance
 
 // add a node with value 'hello' and no links
 graph.add(null, 'hello', function(err, node) {
@@ -26,11 +26,11 @@ To replicate this graph with another once simple pipe the `sync` streams togethe
 After the replication stream finished call `resolve` to apply the changes fetched to your graph
 
 ``` js
-var v1 = vector(db1, {id:'v1'})
-var v2 = vector(db2, {id:'v2'})
+var g1 = hypergraph(db1, {id:'g1'})
+var g2 = hypergraph(db2, {id:'g2'})
 
-var a = v1.sync()
-var b = v2.sync()
+var a = g1.sync()
+var b = g2.sync()
 
 a.pipe(b).pipe(a)
 

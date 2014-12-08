@@ -1,5 +1,5 @@
 {
-  "name": "vector-clock-causal-crawling",
+  "name": "hypergraph",
   "version": "0.0.0",
   "description": "Replication protocol based on scuttlebutt logs and causal linking",
   "main": "index.js",
@@ -20,12 +20,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mafintosh/vector-clock-causal-crawling.git"
+    "url": "https://github.com/mafintosh/hypergraph.git"
   },
   "author": "Mathias Buus (@mafintosh)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mafintosh/vector-clock-causal-crawling/issues"
+    "url": "https://github.com/mafintosh/hypergraph/issues"
   },
-  "homepage": "https://github.com/mafintosh/vector-clock-causal-crawling"
+  "homepage": "https://github.com/mafintosh/hypergraph"
 }
