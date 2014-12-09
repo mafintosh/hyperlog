@@ -1,20 +1,17 @@
 message Node {
+  required string key    = 2;
+  required string peer   = 3;
+  required uint32 seq    = 4;
+  required bytes  value  = 5;
+  repeated string links  = 6;
+}
+
+message Want {
   required string peer = 1;
-  required uint32 seq = 2;
-  required string key = 3;
-  required bytes value = 4;
-  repeated string links = 5;
+  required uint32 seq  = 2;
 }
 
-message Head {
+message Have {
   required string peer = 1;
-  required uint32 seq = 2;
-}
-
-message Handshake {
-  repeated Head heads = 1;
-}
-
-message Fin {
-  
+  required uint32 seq  = 2;
 }
