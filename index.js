@@ -11,8 +11,8 @@ var noop = function() {}
 
 var HEAD = 'head!'
 
-var Vector = function(db, opts) {
-  if (!(this instanceof Vector)) return new Vector(db, opts)
+var Hyperlog = function(db, opts) {
+  if (!(this instanceof Hyperlog)) return new Hyperlog(db, opts)
   if (!opts) opts = {}
 
   if (!opts.id) throw new Error('id is currently required')
@@ -32,15 +32,15 @@ var hash = function(node) {
   return h.digest('hex')
 }
 
-Vector.prototype.replicate = function() {
+Hyperlog.prototype.replicate = function() {
   return replicate(this)
 }
 
-Vector.prototype.resolve = function(cb) {
+Hyperlog.prototype.resolve = function(cb) {
   return resolve(this, cb)
 }
 
-Vector.prototype.heads = function(cb) {
+Hyperlog.prototype.heads = function(cb) {
   var rs = this.db.createReadStream({
     gt: HEAD,
     lt: HEAD+'\xff'
@@ -56,7 +56,7 @@ Vector.prototype.heads = function(cb) {
   return collect(pump(rs, through.obj(format)), cb)
 }
 
-Vector.prototype.get = function(key, cb) {
+Hyperlog.prototype.get = function(key, cb) {
   var peer = key.slice(0, key.indexOf('!'))
   var seq = parseInt(key.slice(peer.length+1, key.indexOf('!', peer.length+1)), 16)
 
@@ -67,7 +67,7 @@ Vector.prototype.get = function(key, cb) {
   })
 }
 
-Vector.prototype.add = function(links, value, opts, cb) {
+Hyperlog.prototype.add = function(links, value, opts, cb) {
   if (typeof opts === 'function') return this.add(links, value, null, opts)
   if (!opts) opts = {}
   if (!links) links = []
@@ -108,7 +108,7 @@ Vector.prototype.add = function(links, value, opts, cb) {
 // right we just lock the world when doing writes since its easy
 // this can easily be optimized later
 
-Vector.prototype.commit = function(batch, node, cb) {
+Hyperlog.prototype.commit = function(batch, node, cb) {
   var self = this
   this.lock(function(release) {
     self.unsafeCommit(batch, node, function(err, node) {
@@ -120,7 +120,7 @@ Vector.prototype.commit = function(batch, node, cb) {
 
 // unsafe since this assumes that is being applied in the right order etc
 
-Vector.prototype.unsafeCommit = function(batch, node, cb) {
+Hyperlog.prototype.unsafeCommit = function(batch, node, cb) {
   if (!cb) cb = noop
 
   var self = this
@@ -169,4 +169,4 @@ Vector.prototype.unsafeCommit = function(batch, node, cb) {
   })
 }
 
-module.exports = Vector
+module.exports = Hyperlog
