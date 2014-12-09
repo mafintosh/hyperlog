@@ -1,4 +1,5 @@
 message Node {
+  required uint32 change = 1;
   required string key    = 2;
   required string peer   = 3;
   required uint32 seq    = 4;
