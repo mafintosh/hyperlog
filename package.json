@@ -1,6 +1,6 @@
 {
   "name": "hyperlog",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Replication protocol based on scuttlebutt logs and causal linking",
   "main": "index.js",
   "dependencies": {
