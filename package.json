@@ -4,6 +4,7 @@
   "description": "Replication protocol based on scuttlebutt logs and causal linking",
   "main": "index.js",
   "dependencies": {
+    "cuid": "^1.2.4",
     "debug": "^2.1.0",
     "duplexify": "^3.2.0",
     "from2": "^1.2.0",
