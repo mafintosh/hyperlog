@@ -182,6 +182,13 @@ Hyperlog.prototype.unsafeCommit = function(batch, node, cb) {
   if (!node.peer) node.peer = this.peer
   node.change = self.change+1
 
+  var check = function() {
+    self.get(node.key, function(err, node) {
+      if (err) return done()
+      cb(null, node)
+    })
+  }
+
   var done = function() {
     batch.push({
       type: 'put',
@@ -216,13 +223,13 @@ Hyperlog.prototype.unsafeCommit = function(batch, node, cb) {
     })
   }
 
-  if (node.seq) return done()
+  if (node.seq) return check()
 
   this.graph.head(node.peer, function(err, seq) {
     if (err) return cb(err)
     node.seq = seq+1
     node.key = keys.encode(node.peer, node.seq, hash(node))
-    done()
+    check()
   })
 }
 
