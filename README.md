@@ -9,7 +9,7 @@ See [pfraze/phoenix#170](https://github.com/pfraze/phoenix/issues/170) for more 
 var hyperlog = require('hyperlog')
 
 // currently you NEED to pass a globally unique id - this will change in the future
-var log = hyperlog(db, {id:'mathias'}) // where db is a levelup instance
+var log = hyperlog(db) // where db is a levelup instance
 
 // add a node with value 'hello' and no links
 log.add(null, 'hello', function(err, node) {
@@ -22,15 +22,15 @@ log.add(null, 'hello', function(err, node) {
 })
 ```
 
-To replicate this log with another once simple pipe the `sync` streams together.
+To replicate this log with another once simple pipe the `replicate` streams together.
 After the replication stream finished call `resolve` to apply the changes fetched to your log
 
 ``` js
-var l1 = hyperlog(db1, {id:'l1'})
-var l2 = hyperlog(db2, {id:'l2'})
+var l1 = hyperlog(db1)
+var l2 = hyperlog(db2)
 
-var a = l1.sync()
-var b = l2.sync()
+var a = l1.replicate()
+var b = l2.replicate()
 
 a.pipe(b).pipe(a)
 
