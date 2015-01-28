@@ -1,5 +1,5 @@
+var hyperlog = require('../')
 var tape = require('tape')
-var hyperlog = require('hyperlog')
 var memdb = require('memdb')
 var collect = require('stream-collector')
 
