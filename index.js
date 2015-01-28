@@ -17,6 +17,8 @@ var CHANGES = 'changes!'
 var NODE = 'node!'
 var HEAD = 'head!'
 
+var noop = function() {}
+
 var Hyperlog = function(db, opts) {
   if (!(this instanceof Hyperlog)) return new Hyperlog(db, opts)
   if (!opts) opts = {}
