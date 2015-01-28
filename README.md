@@ -2,6 +2,13 @@
 
 Graph database that replicates based on scuttlebutt logs and causal linking
 
+```
+npm install hyperlog
+```
+
+[![build status](http://img.shields.io/travis/mafintosh/hyperlog.svg?style=flat)](http://travis-ci.org/mafintosh/hyperlog)
+![dat](http://img.shields.io/badge/Development%20sponsored%20by-dat-green.svg?style=flat)
+
 ``` js
 var hyperlog = require('hyperlog')
 
