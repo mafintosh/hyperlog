@@ -19,7 +19,7 @@ log.add(null, 'hello', function(err, node) {
   console.log('inserted node', node)
 
   // insert 'world' with a link back to the above node
-  log.add([node.key], 'world', function(err, node) {
+  log.add([node.hash], 'world', function(err, node) {
     console.log('inserted new node', node)
   })
 })
