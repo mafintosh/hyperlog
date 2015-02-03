@@ -23,4 +23,5 @@ message Handshake {
   required uint32 version = 1;
   required uint32 changes = 2;
   required string mode = 3;
+  optional bytes metadata = 4;
 }
