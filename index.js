@@ -122,7 +122,7 @@ var add = function (dag, links, value, opts, cb) {
         batch.push({type: 'put', key: dag.logs.key(node.log, node.seq), value: messages.Entry.encode(log)})
 
         dag.get(node.key, function (_, clone) {
-          if (clone) return cb(null, clone)
+          if (clone) return release(cb, null, clone)
           dag.db.batch(batch, function (err) {
             if (err) return release(cb, err)
             dag.changes = node.change
@@ -163,7 +163,7 @@ var createLiveStream = function (dag, opts) {
       if (err) return cb(err)
       dag.get(hash, function (err, node) {
         if (err) return cb(err)
-        since = node.seq
+        since = node.change
         cb(null, node)
       })
     })
