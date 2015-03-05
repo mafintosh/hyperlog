@@ -19,7 +19,7 @@ log.add(null, 'hello', function(err, node) {
   console.log('inserted node', node)
 
   // insert 'world' with a link back to the above node
-  log.add([node.hash], 'world', function(err, node) {
+  log.add([node.key], 'world', function(err, node) {
     console.log('inserted new node', node)
   })
 })
@@ -60,7 +60,7 @@ Create a new log instance. Options include:
 
 #### `log.add(links, value, [cb])`
 
-Add a new node to the graph. `links` should be an array of node hashes that this node links to.
+Add a new node to the graph. `links` should be an array of node keys that this node links to.
 If it doesn't link to any nodes use `null` or an empty array. `value` is the value that you want to store
 in the node. This should be a string or a buffer. The callback is called with the inserted node:
 
@@ -69,15 +69,11 @@ log.add([link], value, function(err, node) {
   // node looks like this
   {
     change: ... // the change number for this node in the local log
-    hash:   ... // the hash of the node. this is also the key of the node
+    key:   ... // the hash of the node. this is also the key of the node
     value:  ... // the value (as a buffer) you inserted
     log:    ... // the peer log this node was appended to
     seq:    ... // the peer log seq number
-    links: [{
-      hash: ... // hash of the linked node
-      log:  ... // peer log of the link
-      seq:  ... // peer log seq number of the link
-    }]
+    links: ['hash-of-link-1', ...]
   }
 })
 ```
@@ -112,13 +108,13 @@ headsStream.on('end', function() {
 })
 ```
 
-#### `changesStream = log.createChangesStream([options])`
+#### `changesStream = log.createReadStream([options])`
 
 Tail the changes feed from the log. Everytime you add a node to the graph
 the changes feed is updated with that node.
 
 ``` js
-var changesStream = log.createChangesStream({live:true})
+var changesStream = log.createReadStream({live:true})
 
 changesStream.on('data', function(node) {
   console.log('change:', node)

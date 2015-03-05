@@ -1,292 +1,231 @@
 var after = require('after-all')
+var lexint = require('lexicographic-integer')
+var collect = require('stream-collector')
 var through = require('through2')
 var pump = require('pump')
-var lexint = require('lexicographic-integer')
+var from = require('from2')
 var mutexify = require('mutexify')
-var collect = require('stream-collector')
-var crypto = require('crypto')
 var cuid = require('cuid')
+var logs = require('level-logs')
 var events = require('events')
 var util = require('util')
-var from = require('from2')
-var logs = require('./lib/logs')
-var replicator = require('./lib/replicator')
+var enumerate = require('level-enumerate')
+var replicate = require('./lib/replicate')
+var messages = require('./lib/messages')
+var hash = require('./lib/hash')
 
-var ID = 'id!'
-var CHANGES = 'changes!'
-var NODE = 'node!'
-var HEAD = 'head!'
+var CHANGES = '!changes!'
+var NODES = '!nodes!'
+var HEADS = '!heads!'
+var ID = '!id'
 
-var noop = function() {}
+var noop = function () {}
 
-var Hyperlog = function(db, opts) {
+var Hyperlog = function (db, opts) {
   if (!(this instanceof Hyperlog)) return new Hyperlog(db, opts)
   if (!opts) opts = {}
 
   events.EventEmitter.call(this)
 
-  this.id = opts.id
+  this.id = null
+  this.enumerate = enumerate(db, {prefix: 'enum'})
   this.db = db
-  this.change = -1
-  this.logs = logs('logs', db)
-  this.tmp = logs('tmp', db)
+  this.logs = logs(db, {prefix: 'logs', valueEncoding: messages.Entry})
   this.lock = mutexify()
-  this.setMaxListeners(0)
+  this.changes = 0
 
   var self = this
-  this.lock(function(release) {
-    var onid = function(err) {
-      if (err) return self.emit('error', err)
-      collect(db.createKeyStream({gt:CHANGES, lt:CHANGES+'\xff', limit:1, reverse:true}), function(err, keys) {
-        if (err) return self.emit('error', err)
-        self.change = keys.length ? lexint.unpack(keys[0].slice(CHANGES.length), 'hex') : 0
-        self.emit('ready')
-        release()
-      })
-    }
 
-    db.get(ID, {valueEncoding:'utf-8'}, function(err, id) {
-      if (err && !err.notFound) return onid(err)
-      self.id = id || opts.id || cuid()
-      if (self.id === id) return onid()
-      db.put(ID, self.id, onid)
+  this.lock(function (release) {
+    collect(db.createKeyStream({gt: CHANGES, lt: CHANGES + '~', reverse: true, limit: 1}), function (_, keys) {
+      self.changes = keys && keys.length ? lexint.unpack(keys[0].split('!').pop(), 'hex') : 0
+      db.get(ID, {valueEncoding: 'utf-8'}, function (_, id) {
+        self.id = id || opts.id || cuid()
+        if (id) return release()
+        db.put(ID, self.id, function () {
+          release()
+        })
+      })
     })
   })
 }
 
 util.inherits(Hyperlog, events.EventEmitter)
 
-var getRef = function(self, ref, cb) {
-  var i = ref.indexOf('!')
-  self.logs.get(ref.slice(0, i), lexint.unpack(ref.slice(i+1), 'hex'), cb)
+Hyperlog.prototype.ready = function (cb) {
+  if (this.id) return cb()
+  this.lock(function (release) {
+    release()
+    cb()
+  })
 }
 
-Hyperlog.prototype.ready = function(cb) {
-  if (this.change >= 0) return cb()
-  this.once('ready', cb)
-}
-
-Hyperlog.prototype.createChangesStream = function(opts) {
+Hyperlog.prototype.heads = function (opts, cb) {
   if (!opts) opts = {}
 
   var self = this
-  var since = opts.since || 0
-  var live = !!opts.live
-  var tail = !!opts.tail
 
-  var wait
-  var notify = function() {
+  var rs = this.db.createValueStream({
+    gt: HEADS,
+    lt: HEADS + '~',
+    valueEncoding: 'utf-8',
+    reverse: opts.reverse
+  })
+
+  var format = through.obj(function (key, enc, cb) {
+    self.get(key, cb)
+  })
+
+  return collect(pump(rs, format), cb)
+}
+
+Hyperlog.prototype.get = function (key, cb) {
+  this.db.get(HEADS + key, {valueEncoding: 'binary'}, function (err, buf) {
+    if (err) return cb(err)
+    cb(null, messages.Node.decode(buf))
+  })
+}
+
+var add = function (dag, links, value, opts, cb) {
+  var logLinks = []
+  var id = opts.log || dag.id
+
+  var next = after(function (err) {
+    if (err) return cb(err)
+
+    dag.lock(function (release) {
+      dag.logs.head(id, function (err, seq) {
+        if (err) return release(cb, err)
+
+        var node = {
+          change: dag.changes + 1,
+          log: id,
+          seq: seq + 1,
+          key: hash(links, value),
+          value: value,
+          links: links
+        }
+
+        if (opts.hash && node.key !== opts.hash) return release(cb, new Error('Checksum mismatch'))
+
+        var log = {
+          change: dag.changes + 1,
+          node: node.key,
+          links: logLinks
+        }
+
+        var batch = []
+        for (var i = 0; i < links.length; i++) batch.push({type: 'del', key: HEADS + links[i]})
+        batch.push({type: 'put', key: CHANGES + lexint.pack(node.change, 'hex'), value: node.key})
+        batch.push({type: 'put', key: NODES + node.key, value: messages.Node.encode(node)})
+        batch.push({type: 'put', key: HEADS + node.key, value: node.key})
+        batch.push({type: 'put', key: dag.logs.key(node.log, node.seq), value: messages.Entry.encode(log)})
+
+        dag.get(node.key, function (_, clone) {
+          if (clone) return cb(null, clone)
+          dag.db.batch(batch, function (err) {
+            if (err) return release(cb, err)
+            dag.changes = node.change
+            dag.emit('add')
+            release(cb, null, node)
+          })
+        })
+      })
+    })
+  })
+
+  var nextLink = function () {
+    var cb = next()
+    return function (err, link) {
+      if (err) return cb(err)
+      if (link.log !== dag.id && logLinks.indexOf(link.log) === -1) logLinks.push(link.log)
+      cb(null)
+    }
+  }
+
+  for (var i = 0; i < links.length; i++) {
+    if (typeof links[i] !== 'string') links[i] = links[i].key
+    dag.get(links[i], nextLink())
+  }
+}
+
+var createLiveStream = function (dag, opts) {
+  var since = opts.since || 0
+  var wait = null
+
+  var read = function (size, cb) {
+    if (dag.changes <= since) {
+      wait = cb
+      return
+    }
+
+    dag.db.get(CHANGES + lexint.pack(since + 1, 'hex'), function (err, hash) {
+      if (err) return cb(err)
+      dag.get(hash, function (err, node) {
+        if (err) return cb(err)
+        since = node.seq
+        cb(null, node)
+      })
+    })
+  }
+
+  var kick = function () {
     if (!wait) return
     var cb = wait
     wait = null
     read(0, cb)
   }
 
-  var read = function(size, cb) {
-    if (tail) {
-      tail = false
-      self.lock(function(release) {
-        read(size, cb)
-        release()
-      })
-      return
-    }
+  dag.on('add', kick)
+  dag.ready(kick)
 
-    self.db.get(CHANGES+lexint.pack(since+1, 'hex'), function(err, ref) {
-      if (err && !err.notFound) return cb(err)
+  var rs = from.obj(read)
 
-      if (err) {
-        if (self.change > since) return read(size, cb)
-        wait = cb
-        return
-      }
-
-      since++
-      cb(null, ref)
-    })
-  }
-
-  var rs
-
-  if (live) {
-    rs = from.obj(read)
-    if (tail) {
-      self.lock(function(release) {
-        since = self.change
-        release()
-      })
-    }
-    self.on('add', notify)
-    rs.on('close', function() {
-      self.removeListener('add', notify)
-    })
-  } else {
-    rs = self.db.createValueStream({
-      gt:CHANGES+lexint.pack(since, 'hex'),
-      lt:CHANGES+'\xff',
-      reverse: opts.reverse
-    })
-  }
-
-  var format = through.obj(function(ref, enc, cb) {
-    getRef(self, ref, cb)
+  rs.once('close', function () {
+    dag.removeListener('add', kick)
   })
 
-  return pump(rs, format)
+  return rs
 }
 
-Hyperlog.prototype.heads = function(opts, cb) {
-  if (typeof opts === 'function') return this.heads(null, opts)
+Hyperlog.prototype.createReadStream = function (opts) {
   if (!opts) opts = {}
+  if (opts.live) return createLiveStream(this, opts)
 
   var self = this
-  var values = opts.values !== false
-  var rs = this.db.createValueStream({
-    reverse: opts.reverse,
-    gt: HEAD,
-    lt: HEAD+'\xff',
+  var since = opts.since || 0
+  var keys = this.db.createValueStream({
+    gt: CHANGES + lexint.pack(since || 0, 'hex'),
+    lt: CHANGES + '~',
     valueEncoding: 'utf-8'
   })
 
-  var format = function(ref, enc, cb) {
-    var i = ref.indexOf('!')
-    var log = ref.slice(0, i)
-    var seq = lexint.unpack(ref.slice(i+1), 'hex')
-    if (values) self.logs.get(log, seq, cb)
-    else cb(null, {log:log, seq:seq})
+  var get = function (key, enc, cb) {
+    self.get(key, cb)
   }
 
-  return collect(pump(rs, through.obj(format)), cb)
+  return pump(keys, through.obj(get))
 }
 
-Hyperlog.prototype.createReplicationStream = function(opts) {
-  return replicator(this, opts)
+Hyperlog.prototype.createReplicationStream = function (opts) {
+  return replicate(this, opts)
 }
 
-Hyperlog.prototype.get = function(hash, cb) {
-  var self = this
-  this.db.get(NODE+hash, {valueEncoding:'utf-8'}, function(err, ref) {
-    if (err) return cb(err)
-    getRef(self, ref, cb)
-  })
+Hyperlog.prototype.get = function (key, cb) {
+  this.db.get(NODES + key, {valueEncoding: messages.Node}, cb)
 }
 
-var hash = function(value, links) {
-  var sha = crypto.createHash('sha1')
-
-  sha.update(''+value.length+'\n')
-  sha.update(value)
-  for (var i = 0; i < links.length; i++) sha.update(links[i].hash+'\n')
-
-  return sha.digest('hex')
-}
-
-var add = function(self, log, cksum, links, value, cb) {
-  var self = self
-
-  var node = {
-    change: 0,
-    hash: null,
-    log: log,
-    seq: 0,
-    sort: 0,
-    links: links,
-    value: value
-  }
-
-  var next = after(function(err) {
-    if (err) return cb(err)
-
-    node.hash = hash(value, links)
-    if (cksum && node.hash !== cksum) return cb(new Error('checksum failed'))
-
-    node.change = self.change+1
-
-    var batch = []
-    var ref = node.log+'!'+lexint.pack(node.seq, 'hex')
-
-    batch.push({
-      type: 'put',
-      key: self.logs.key(log, node.seq),
-      value: self.logs.value(node)
-    })
-
-    batch.push({
-      type: 'put',
-      key: CHANGES+lexint.pack(node.change, 'hex'),
-      value: ref
-    })
-
-    batch.push({
-      type: 'put',
-      key: HEAD+ref,
-      value: ref
-    })
-
-    batch.push({
-      type: 'put',
-      key: NODE+node.hash,
-      value: ref
-    })
-
-    for (var i = 0; i < links.length; i++) batch.push({type:'del', key:HEAD+links[i].log+'!'+lexint.pack(links[i].seq, 'hex')})
-
-    self.get(node.hash, function(err, oldNode) {
-      if (!err) return cb(err, oldNode)
-      self.db.batch(batch, function(err) {
-        if (err) return cb(err)
-
-        self.change++
-        self.emit('add', node)
-        cb(null, node)
-      })
-    })
-  })
-
-  links.forEach(function(link, i) {
-    var n = next()
-
-    self.get(typeof link === 'string' ? link : link.hash, function(err, resolved) {
-      if (err) return n(err)
-      node.sort = Math.max(node.sort, resolved.sort+1)
-      links[i] = resolved
-      n()
-    })
-  })
-
-  var n = next()
-  self.logs.tail(log, function(err, seq) {
-    if (err) return n(err)
-    node.seq = 1+seq
-
-    if (!seq) {
-      node.sort = Math.max(node.sort, 1)
-      return n()
-    }
-
-    self.logs.get(log, seq, function(err, prev) {
-      if (err) return n(err)
-      node.sort = Math.max(node.sort, prev.sort+1)
-      n()
-    })
-  })
-}
-
-Hyperlog.prototype.add = function(links, value, opts, cb) {
+Hyperlog.prototype.add = function (links, value, opts, cb) {
   if (typeof opts === 'function') return this.add(links, value, null, opts)
-  if (!links) links = []
-  if (!Array.isArray(links)) links = [links]
-  if (!Buffer.isBuffer(value)) value = new Buffer(value)
   if (!cb) cb = noop
   if (!opts) opts = {}
+  if (!links) links = []
+  if (!Array.isArray(links)) links = [links]
+  if (typeof value === 'string') value = new Buffer(value)
 
   var self = this
-
-  this.lock(function(release) {
-    add(self, opts.log || self.id, opts.hash || null, links, value, function(err, node) {
-      if (err) return release(cb, err)
-      release(cb, null, node)
-    })
+  this.ready(function () {
+    add(self, links, value, opts, cb)
   })
 }
 

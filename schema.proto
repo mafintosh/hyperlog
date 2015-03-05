@@ -1,27 +1,25 @@
-message Link {
-  required string hash = 1;
-  required string log  = 2;
-  required uint32 seq  = 3;
-}
-
 message Node {
   required uint32 change = 1;
-  required string hash   = 2;
+  required string key    = 2;
   required string log    = 3;
-  required uint32 seq    = 4;
-  required uint32 sort   = 5;
-  repeated Link   links  = 6;
-  required bytes  value  = 7;
+  optional uint32 seq    = 4;
+  required bytes value   = 5;
+  repeated string links  = 6;
 }
 
-message Head {
+message Entry {
+  required uint32 change = 1;
+  required string node   = 2;
+  repeated string links  = 3;
+}
+
+message Log {
   required string log = 1;
   required uint32 seq = 2;
 }
 
 message Handshake {
   required uint32 version = 1;
-  required uint32 changes = 2;
-  required string mode = 3;
-  optional bytes metadata = 4;
+  optional string mode    = 2 [default = "sync"];
+  optional bytes metadata = 3;
 }

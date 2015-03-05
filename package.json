@@ -1,28 +1,31 @@
 {
   "name": "hyperlog",
   "version": "1.0.2",
-  "description": "Replication protocol based on scuttlebutt logs and causal linking",
+  "description": "Graph database that replicates based on scuttlebutt logs and causal linking",
   "main": "index.js",
   "dependencies": {
     "after-all": "^2.0.1",
+    "bitfield": "^1.1.1",
     "cuid": "^1.2.4",
-    "debug": "^2.1.0",
     "duplexify": "^3.2.0",
-    "from2": "^1.2.0",
     "length-prefixed-stream": "^1.0.1",
+    "level-enumerate": "^1.0.1",
+    "level-logs": "^1.0.0",
     "lexicographic-integer": "^1.1.0",
     "mutexify": "^1.0.1",
-    "protocol-buffers": "^2.4.2",
+    "protocol-buffers": "^2.6.0",
     "pump": "^1.0.0",
+    "sequential-hash": "^1.0.0",
     "stream-collector": "^1.0.1",
     "through2": "^0.6.3"
   },
   "devDependencies": {
     "memdb": "^0.2.0",
-    "tape": "^3.4.0"
+    "standard": "^2.10.0",
+    "tape": "^3.5.0"
   },
   "scripts": {
-    "test": "tape test/*.js"
+    "test": "standard && tape test/*"
   },
   "repository": {
     "type": "git",
