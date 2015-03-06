@@ -60,16 +60,13 @@ Hyperlog.prototype.ready = function (cb) {
   })
 }
 
-Hyperlog.prototype.heads = function (opts, cb) {
-  if (!opts) opts = {}
-
+Hyperlog.prototype.heads = function (cb) {
   var self = this
 
   var rs = this.db.createValueStream({
     gt: HEADS,
     lt: HEADS + '~',
-    valueEncoding: 'utf-8',
-    reverse: opts.reverse
+    valueEncoding: 'utf-8'
   })
 
   var format = through.obj(function (key, enc, cb) {
