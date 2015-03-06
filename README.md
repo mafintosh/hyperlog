@@ -27,14 +27,14 @@ log.add(null, 'hello', function(err, node) {
 
 ## Replicate graph
 
-To replicate this log with another one simply use `log.createReplicationStream()` and pipe it together with a replication stream from another log.
+To replicate this log with another one simply use `log.replicate()` and pipe it together with a replication stream from another log.
 
 ``` js
 var l1 = hyperlog(db1)
 var l2 = hyperlog(db2)
 
-var s1 = l1.createReplicationStream()
-var s2 = l2.createReplicationStream()
+var s1 = l1.replicate()
+var s2 = l2.replicate()
 
 s1.pipe(s2).pipe(s1)
 
@@ -44,7 +44,7 @@ s1.on('end', function() {
 ```
 
 A detailed write-up on how this replication protocol works will be added to this repo in the near
-future. For now I refer to the source code.
+future. For now see the source code.
 
 ## API
 
@@ -131,7 +131,7 @@ Options include:
 }
 ```
 
-#### `replicationStream = log.createReplicationStream([options])`
+#### `replicationStream = log.replicate([options])`
 
 Replicate the log to another one using a replication stream.
 Simply pipe your replication stream together with another log's replication stream.
