@@ -77,7 +77,7 @@ Hyperlog.prototype.heads = function (cb) {
 }
 
 Hyperlog.prototype.get = function (key, cb) {
-  this.db.get(HEADS + key, {valueEncoding: 'binary'}, function (err, buf) {
+  this.db.get(NODES + key, {valueEncoding: 'binary'}, function (err, buf) {
     if (err) return cb(err)
     cb(null, messages.Node.decode(buf))
   })
