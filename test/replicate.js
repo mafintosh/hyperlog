@@ -1,7 +1,6 @@
 var hyperlog = require('../')
 var tape = require('tape')
 var memdb = require('memdb')
-var collect = require('stream-collector')
 var pump = require('pump')
 
 var sync = function (a, b, cb) {
