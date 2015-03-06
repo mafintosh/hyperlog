@@ -207,6 +207,7 @@ Hyperlog.prototype.createReadStream = function (opts) {
   return pump(keys, through.obj(get))
 }
 
+Hyperlog.prototype.replicate =
 Hyperlog.prototype.createReplicationStream = function (opts) {
   return replicate(this, opts)
 }
