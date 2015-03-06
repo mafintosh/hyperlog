@@ -1,6 +1,6 @@
 {
   "name": "hyperlog",
-  "version": "1.0.2",
+  "version": "2.0.0",
   "description": "Graph database that replicates based on scuttlebutt logs and causal linking",
   "main": "index.js",
   "dependencies": {
