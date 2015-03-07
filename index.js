@@ -14,10 +14,10 @@ var replicate = require('./lib/replicate')
 var messages = require('./lib/messages')
 var hash = require('./lib/hash')
 
+var ID = '!!id'
 var CHANGES = '!changes!'
 var NODES = '!nodes!'
 var HEADS = '!heads!'
-var ID = '!id'
 
 var noop = function () {}
 
