@@ -17,7 +17,6 @@
     "mutexify": "^1.0.1",
     "protocol-buffers": "^2.6.0",
     "pump": "^1.0.0",
-    "sequential-hash": "^1.0.0",
     "stream-collector": "^1.0.1",
     "through2": "^0.6.3"
   },
