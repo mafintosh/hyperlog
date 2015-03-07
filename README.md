@@ -154,10 +154,13 @@ Options include:
 
 ``` js
 {
-  mode: 'push' | 'pull' | 'sync' // set replication mode. defaults to sync
+  mode: 'push' | 'pull' | 'sync', // set replication mode. defaults to sync
+  live: true, // keep the replication stream open. defaults to false
+  metadata: someBuffer // send optional metadata as part of the handshake
 }
 ```
 
+If you send `metadata` it will be emitted as an `metadata` event on the stream.
 A detailed write up on how the graph replicates will be added later.
 
 ## License
