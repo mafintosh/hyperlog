@@ -19,6 +19,12 @@ var CHANGES = '!changes!'
 var NODES = '!nodes!'
 var HEADS = '!heads!'
 
+var CHECKSUM_MISMATCH = new Error('Checksum mismatch')
+var INVALID_LOG = new Error('Invalid log sequence')
+
+INVALID_LOG.notFound = true
+INVALID_LOG.status = 404
+
 var noop = function () {}
 
 var Hyperlog = function (db, opts) {
@@ -103,7 +109,8 @@ var add = function (dag, links, value, opts, cb) {
           links: links
         }
 
-        if (opts.hash && node.key !== opts.hash) return release(cb, new Error('Checksum mismatch'))
+        if (opts.hash && node.key !== opts.hash) return release(cb, CHECKSUM_MISMATCH)
+        if (opts.seq && node.seq !== opts.seq) return release(cb, INVALID_LOG)
 
         var log = {
           change: dag.changes + 1,
@@ -111,15 +118,24 @@ var add = function (dag, links, value, opts, cb) {
           links: logLinks
         }
 
-        var batch = []
-        for (var i = 0; i < links.length; i++) batch.push({type: 'del', key: HEADS + links[i]})
-        batch.push({type: 'put', key: CHANGES + lexint.pack(node.change, 'hex'), value: node.key})
-        batch.push({type: 'put', key: NODES + node.key, value: messages.Node.encode(node)})
-        batch.push({type: 'put', key: HEADS + node.key, value: node.key})
-        batch.push({type: 'put', key: dag.logs.key(node.log, node.seq), value: messages.Entry.encode(log)})
+        var onclone = function (clone) {
+          if (!opts.log) return release(cb, null, clone)
+          dag.db.put(dag.logs.key(node.log, node.seq), messages.Entry.encode(log), function (err) {
+            if (err) return release(cb, err)
+            release(cb, null, clone)
+          })
+        }
 
         dag.get(node.key, function (_, clone) {
-          if (clone) return release(cb, null, clone)
+          if (clone) return onclone(clone)
+
+          var batch = []
+          for (var i = 0; i < links.length; i++) batch.push({type: 'del', key: HEADS + links[i]})
+          batch.push({type: 'put', key: CHANGES + lexint.pack(node.change, 'hex'), value: node.key})
+          batch.push({type: 'put', key: NODES + node.key, value: messages.Node.encode(node)})
+          batch.push({type: 'put', key: HEADS + node.key, value: node.key})
+          batch.push({type: 'put', key: dag.logs.key(node.log, node.seq), value: messages.Entry.encode(log)})
+
           dag.db.batch(batch, function (err) {
             if (err) return release(cb, err)
             dag.changes = node.change
