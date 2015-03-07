@@ -22,4 +22,5 @@ message Handshake {
   required uint32 version = 1;
   optional string mode    = 2 [default = "sync"];
   optional bytes metadata = 3;
+  optional bool live      = 4;
 }
