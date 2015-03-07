@@ -1,6 +1,6 @@
 # hyperlog
 
-Graph database that replicates based on scuttlebutt logs and causal linking
+[Merkle DAG](https://github.com/jbenet/random-ideas/issues/20) that replicates based on scuttlebutt logs and causal linking
 
 ```
 npm install hyperlog

@@ -1,7 +1,7 @@
 {
   "name": "hyperlog",
   "version": "2.3.0",
-  "description": "Graph database that replicates based on scuttlebutt logs and causal linking",
+  "description": "Merkle DAG that replicates based on scuttlebutt logs and causal linking",
   "main": "index.js",
   "dependencies": {
     "after-all": "^2.0.1",
