@@ -191,10 +191,13 @@ Hyperlog.prototype.createReadStream = function (opts) {
 
   var self = this
   var since = opts.since || 0
+  var until = opts.until || 0
+
   var keys = this.db.createValueStream({
-    gt: CHANGES + lexint.pack(since || 0, 'hex'),
-    lt: CHANGES + '~',
-    valueEncoding: 'utf-8'
+    gt: CHANGES + lexint.pack(since, 'hex'),
+    lt: CHANGES + (until ? lexint.pack(until, 'hex') : '~'),
+    valueEncoding: 'utf-8',
+    reverse: opts.reverse
   })
 
   var get = function (key, enc, cb) {
