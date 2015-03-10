@@ -35,6 +35,10 @@ var sync = function (a, b) {
   a.pipe(b).pipe(a)
 }
 
+clone.createReadStream({live: true}).on('data', function (data) {
+  console.log('change: (%d) %s', data.change, data.key)
+})
+
 log.add(null, 'hello', function (err, node) {
   if (err) throw err
   log.add(node, 'world', function (err, node) {
