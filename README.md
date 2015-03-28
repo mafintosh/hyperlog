@@ -156,7 +156,8 @@ Options include:
 {
   mode: 'push' | 'pull' | 'sync', // set replication mode. defaults to sync
   live: true, // keep the replication stream open. defaults to false
-  metadata: someBuffer // send optional metadata as part of the handshake
+  metadata: someBuffer, // send optional metadata as part of the handshake
+  frame: true // frame the data with length prefixes. defaults to true
 }
 ```
 
