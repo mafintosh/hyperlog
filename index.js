@@ -151,7 +151,7 @@ var add = function (dag, links, value, opts, cb) {
     var cb = next()
     return function (err, link) {
       if (err) return cb(err)
-      if (link.log !== dag.id && logLinks.indexOf(link.log) === -1) logLinks.push(link.log)
+      if (link.log !== id && logLinks.indexOf(link.log) === -1) logLinks.push(link.log)
       cb(null)
     }
   }
