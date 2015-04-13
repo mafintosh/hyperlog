@@ -33,7 +33,7 @@ var Hyperlog = function (db, opts) {
 
   events.EventEmitter.call(this)
 
-  this.id = null
+  this.id = opts.id || null
   this.enumerate = enumerate(db, {prefix: 'enum'})
   this.db = db
   this.logs = logs(db, {prefix: 'logs', valueEncoding: messages.Entry})
@@ -45,8 +45,9 @@ var Hyperlog = function (db, opts) {
   this.lock(function (release) {
     collect(db.createKeyStream({gt: CHANGES, lt: CHANGES + '~', reverse: true, limit: 1}), function (_, keys) {
       self.changes = keys && keys.length ? lexint.unpack(keys[0].split('!').pop(), 'hex') : 0
+      if (self.id) return release()
       db.get(ID, {valueEncoding: 'utf-8'}, function (_, id) {
-        self.id = id || opts.id || cuid()
+        self.id = id || cuid()
         if (id) return release()
         db.put(ID, self.id, function () {
           release()
