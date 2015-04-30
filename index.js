@@ -39,6 +39,7 @@ var Hyperlog = function (db, opts) {
   this.logs = logs(db, {prefix: 'logs', valueEncoding: messages.Entry})
   this.lock = mutexify()
   this.changes = 0
+  this.setMaxListeners(0)
 
   var self = this
 
