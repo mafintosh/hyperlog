@@ -98,7 +98,7 @@ var add = function (dag, links, value, opts, cb) {
   var next = after(function (err) {
     if (err) return cb(err)
 
-    dag.lock(function (release) {
+    var onlocked = function (release) {
       dag.logs.head(id, function (err, seq) {
         if (err) return release(cb, err)
 
@@ -146,7 +146,11 @@ var add = function (dag, links, value, opts, cb) {
           })
         })
       })
-    })
+    }
+
+    if (opts.release) return onlocked(opts.release)
+
+    dag.lock(onlocked)
   })
 
   var nextLink = function () {
@@ -245,6 +249,17 @@ Hyperlog.prototype.add = function (links, value, opts, cb) {
   var self = this
   this.ready(function () {
     add(self, links, value, opts, cb)
+  })
+}
+
+Hyperlog.prototype.append = function (value, cb) {
+  if (!cb) cb = noop
+  var self = this
+  this.lock(function (release) {
+    self.heads(function (err, heads) {
+      if (err) return release(cb, err)
+      add(self, heads, value, {release: release}, cb)
+    })
   })
 }
 

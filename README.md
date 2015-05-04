@@ -64,7 +64,7 @@ Add a new node to the graph. `links` should be an array of node keys that this n
 If it doesn't link to any nodes use `null` or an empty array. `value` is the value that you want to store
 in the node. This should be a string or a buffer. The callback is called with the inserted node:
 
-```
+``` js
 log.add([link], value, function(err, node) {
   // node looks like this
   {
@@ -77,6 +77,10 @@ log.add([link], value, function(err, node) {
   }
 })
 ```
+
+#### `log.append(value, [cb])`
+
+Add a value that links all the current heads.
 
 #### `log.get(hash, cb)`
 
