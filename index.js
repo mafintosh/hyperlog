@@ -37,7 +37,7 @@ var Hyperlog = function (db, opts) {
   this.enumerate = enumerate(db, {prefix: 'enum'})
   this.db = db
   this.logs = logs(db, {prefix: 'logs', valueEncoding: messages.Entry})
-  this.lock = mutexify()
+  this.lock = opts.lock || mutexify()
   this.changes = 0
   this.setMaxListeners(0)
 
