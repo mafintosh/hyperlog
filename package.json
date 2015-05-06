@@ -1,6 +1,6 @@
 {
   "name": "hyperlog",
-  "version": "3.5.0",
+  "version": "3.5.1",
   "description": "Merkle DAG that replicates based on scuttlebutt logs and causal linking",
   "main": "index.js",
   "dependencies": {
