@@ -42,17 +42,23 @@ var Hyperlog = function (db, opts) {
   this.setMaxListeners(0)
 
   var self = this
+  var getId = opts.getId || function (cb) {
+    db.get(ID, {valueEncoding: 'utf-8'}, function (_, id) {
+      if (id) return cb(null, id)
+      id = cuid()
+      db.put(ID, id, function () {
+        cb(null, id)
+      })
+    })
+  }
 
   this.lock(function (release) {
     collect(db.createKeyStream({gt: CHANGES, lt: CHANGES + '~', reverse: true, limit: 1}), function (_, keys) {
       self.changes = Math.max(self.changes, keys && keys.length ? lexint.unpack(keys[0].split('!').pop(), 'hex') : 0)
       if (self.id) return release()
-      db.get(ID, {valueEncoding: 'utf-8'}, function (_, id) {
+      getId(function (_, id) {
         self.id = id || cuid()
-        if (id) return release()
-        db.put(ID, self.id, function () {
-          release()
-        })
+        release()
       })
     })
   })
