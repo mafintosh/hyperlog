@@ -45,7 +45,7 @@ var Hyperlog = function (db, opts) {
 
   this.lock(function (release) {
     collect(db.createKeyStream({gt: CHANGES, lt: CHANGES + '~', reverse: true, limit: 1}), function (_, keys) {
-      self.changes = keys && keys.length ? lexint.unpack(keys[0].split('!').pop(), 'hex') : 0
+      self.changes = Math.max(self.changes, keys && keys.length ? lexint.unpack(keys[0].split('!').pop(), 'hex') : 0)
       if (self.id) return release()
       db.get(ID, {valueEncoding: 'utf-8'}, function (_, id) {
         self.id = id || cuid()
