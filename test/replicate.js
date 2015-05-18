@@ -2,6 +2,7 @@ var hyperlog = require('../')
 var tape = require('tape')
 var memdb = require('memdb')
 var pump = require('pump')
+var through = require('through2')
 
 var sync = function (a, b, cb) {
   var stream = a.replicate()
@@ -84,6 +85,35 @@ tape('syncs with initial superset', function (t) {
                 t.same(map1, map2, 'logs are synced')
                 t.end()
               })
+            })
+          })
+        })
+      })
+    })
+  })
+})
+
+tape('process', function (t) {
+  var hyper = hyperlog(memdb())
+  var clone = hyperlog(memdb())
+
+  var process = function (node, enc, cb) {
+    setImmediate(function () {
+      cb(null, node)
+    })
+  }
+
+  hyper.add(null, 'a', function () {
+    hyper.add(null, 'b', function () {
+      hyper.add(null, 'c', function () {
+        var stream = hyper.replicate()
+        pump(stream, clone.replicate({process: through.obj(process)}), stream, function () {
+          toJSON(clone, function (err, map1) {
+            t.error(err)
+            toJSON(hyper, function (err, map2) {
+              t.error(err)
+              t.same(map1, map2, 'logs are synced')
+              t.end()
             })
           })
         })
