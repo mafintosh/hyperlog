@@ -176,6 +176,7 @@ var add = function (dag, links, value, opts, cb) {
 
 var createLiveStream = function (dag, opts) {
   var since = opts.since || 0
+  var limit = opts.limit || -1
   var wait = null
 
   var read = function (size, cb) {
@@ -184,11 +185,14 @@ var createLiveStream = function (dag, opts) {
       return
     }
 
+    if (!limit) return cb(null, null)
+
     dag.db.get(CHANGES + lexint.pack(since + 1, 'hex'), function (err, hash) {
       if (err) return cb(err)
       dag.get(hash, function (err, node) {
         if (err) return cb(err)
         since = node.change
+        if (limit !== -1) limit--
         cb(null, node)
       })
     })
@@ -225,7 +229,8 @@ Hyperlog.prototype.createReadStream = function (opts) {
     gt: CHANGES + lexint.pack(since, 'hex'),
     lt: CHANGES + (until ? lexint.pack(until, 'hex') : '~'),
     valueEncoding: 'utf-8',
-    reverse: opts.reverse
+    reverse: opts.reverse,
+    limit: opts.limit
   })
 
   var get = function (key, enc, cb) {
