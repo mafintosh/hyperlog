@@ -9,6 +9,7 @@
     "brfs": "^1.4.0",
     "cuid": "^1.2.4",
     "duplexify": "^3.2.0",
+    "framed-hash": "^1.0.0",
     "from2": "^1.3.0",
     "length-prefixed-stream": "^1.1.0",
     "level-enumerate": "^1.0.1",
