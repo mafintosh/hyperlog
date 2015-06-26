@@ -54,11 +54,12 @@ Create a new log instance. Options include:
 
 ``` js
 {
-  id: 'a-globally-unique-peer-id'
+  id: 'a-globally-unique-peer-id',
+  valueEncoding: 'a levelup-style encoding property' // example: 'json'
 }
 ```
 
-#### `log.add(links, value, [cb])`
+#### `log.add(links, value, opts={}, [cb])`
 
 Add a new node to the graph. `links` should be an array of node keys that this node links to.
 If it doesn't link to any nodes use `null` or an empty array. `value` is the value that you want to store
@@ -78,15 +79,21 @@ log.add([link], value, function(err, node) {
 })
 ```
 
-#### `log.append(value, [cb])`
+Optionally supply an `opts.valueEncoding`.
+
+#### `log.append(value, opts={}, [cb])`
 
 Add a value that links all the current heads.
 
-#### `log.get(hash, cb)`
+Optionally supply an `opts.valueEncoding`.
+
+#### `log.get(hash, opts={}, cb)`
 
 Lookup a node by its hash. Returns a node similar to `.add` above.
 
-#### `log.heads(cb)`
+Optionally supply an `opts.valueEncoding`.
+
+#### `log.heads(opts={}, cb)`
 
 Get the heads of the graph as a list. A head is node that no other node
 links to.
@@ -112,6 +119,8 @@ headsStream.on('end', function() {
 })
 ```
 
+Optionally supply an `opts.valueEncoding`.
+
 #### `changesStream = log.createReadStream([options])`
 
 Tail the changes feed from the log. Everytime you add a node to the graph
@@ -129,9 +138,10 @@ Options include:
 
 ``` js
 {
-  since: changeNumber // only returns changes AFTER the number
-  live: false         // never close the change stream
-  tail: false         // since = lastChange
+  since: changeNumber     // only returns changes AFTER the number
+  live: false             // never close the change stream
+  tail: false             // since = lastChange
+  valueEncoding: 'binary'
 }
 ```
 
