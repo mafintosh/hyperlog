@@ -13,6 +13,7 @@ var enumerate = require('level-enumerate')
 var replicate = require('./lib/replicate')
 var messages = require('./lib/messages')
 var hash = require('./lib/hash')
+var encoder = require('./lib/encode')
 
 var ID = '!!id'
 var CHANGES = '!changes!'
@@ -40,6 +41,7 @@ var Hyperlog = function (db, opts) {
   this.lock = opts.lock || mutexify()
   this.changes = 0
   this.setMaxListeners(0)
+  this.valueEncoding = opts.valueEncoding || opts.encoding || 'binary'
 
   var self = this
   var getId = opts.getId || function (cb) {
@@ -84,7 +86,11 @@ Hyperlog.prototype.heads = function (cb) {
   })
 
   var format = through.obj(function (key, enc, cb) {
-    self.get(key, cb)
+    self.get(key, function (err, node) {
+      if (err) return cb(err)
+      node.value = encoder.decode(node.value, self.valueEncoding)
+      cb(null, node)
+    })
   })
 
   return collect(pump(rs, format), cb)
@@ -255,21 +261,31 @@ Hyperlog.prototype.add = function (links, value, opts, cb) {
   if (!opts) opts = {}
   if (!links) links = []
   if (!Array.isArray(links)) links = [links]
-  if (typeof value === 'string') value = new Buffer(value)
+  value = encoder.encode(value, opts.valueEncoding || this.valueEncoding)
 
   var self = this
   this.ready(function () {
-    add(self, links, value, opts, cb)
+    add(self, links, value, opts, function (err, node) {
+      if (err) return cb(err)
+      node.value = encoder.decode(node.value, self.valueEncoding)
+      cb(null, node)
+    })
   })
 }
 
 Hyperlog.prototype.append = function (value, cb) {
   if (!cb) cb = noop
   var self = this
+  value = encoder.encode(value, this.valueEncoding)
+
   this.lock(function (release) {
     self.heads(function (err, heads) {
       if (err) return release(cb, err)
-      add(self, heads, value, {release: release}, cb)
+      add(self, heads, value, {release: release}, function (err, node) {
+        if (err) return cb(err)
+        node.value = encoder.decode(node.value, self.valueEncoding)
+        cb(null, node)
+      })
     })
   })
 }
