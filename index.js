@@ -13,6 +13,7 @@ var enumerate = require('level-enumerate')
 var replicate = require('./lib/replicate')
 var messages = require('./lib/messages')
 var hash = require('./lib/hash')
+var encoder = require('./lib/encode')
 
 var ID = '!!id'
 var CHANGES = '!changes!'
@@ -40,6 +41,7 @@ var Hyperlog = function (db, opts) {
   this.lock = opts.lock || mutexify()
   this.changes = 0
   this.setMaxListeners(0)
+  this.valueEncoding = opts.valueEncoding || opts.encoding || 'binary'
 
   var self = this
   var getId = opts.getId || function (cb) {
@@ -74,8 +76,13 @@ Hyperlog.prototype.ready = function (cb) {
   })
 }
 
-Hyperlog.prototype.heads = function (cb) {
+Hyperlog.prototype.heads = function (opts, cb) {
   var self = this
+  if (!opts) opts = {}
+  if (typeof opts === 'function') {
+    cb = opts
+    opts = {}
+  }
 
   var rs = this.db.createValueStream({
     gt: HEADS,
@@ -84,16 +91,24 @@ Hyperlog.prototype.heads = function (cb) {
   })
 
   var format = through.obj(function (key, enc, cb) {
-    self.get(key, cb)
+    self.get(key, opts, cb)
   })
 
   return collect(pump(rs, format), cb)
 }
 
-Hyperlog.prototype.get = function (key, cb) {
+Hyperlog.prototype.get = function (key, opts, cb) {
+  if (!opts) opts = {}
+  if (typeof opts === 'function') {
+    cb = opts
+    opts = {}
+  }
+  var self = this
   this.db.get(NODES + key, {valueEncoding: 'binary'}, function (err, buf) {
     if (err) return cb(err)
-    cb(null, messages.Node.decode(buf))
+    var node = messages.Node.decode(buf)
+    node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
+    cb(null, node)
   })
 }
 
@@ -134,7 +149,7 @@ var add = function (dag, links, value, opts, cb) {
           })
         }
 
-        dag.get(node.key, function (_, clone) {
+        dag.get(node.key, { valueEncoding: 'binary' }, function (_, clone) {
           if (clone) return onclone(clone)
 
           var batch = []
@@ -189,7 +204,7 @@ var createLiveStream = function (dag, opts) {
 
     dag.db.get(CHANGES + lexint.pack(since + 1, 'hex'), function (err, hash) {
       if (err) return cb(err)
-      dag.get(hash, function (err, node) {
+      dag.get(hash, opts, function (err, node) {
         if (err) return cb(err)
         since = node.change
         if (limit !== -1) limit--
@@ -234,7 +249,7 @@ Hyperlog.prototype.createReadStream = function (opts) {
   })
 
   var get = function (key, enc, cb) {
-    self.get(key, cb)
+    self.get(key, opts, cb)
   }
 
   return pump(keys, through.obj(get))
@@ -245,31 +260,42 @@ Hyperlog.prototype.createReplicationStream = function (opts) {
   return replicate(this, opts)
 }
 
-Hyperlog.prototype.get = function (key, cb) {
-  this.db.get(NODES + key, {valueEncoding: messages.Node}, cb)
-}
-
 Hyperlog.prototype.add = function (links, value, opts, cb) {
   if (typeof opts === 'function') return this.add(links, value, null, opts)
   if (!cb) cb = noop
   if (!opts) opts = {}
   if (!links) links = []
   if (!Array.isArray(links)) links = [links]
-  if (typeof value === 'string') value = new Buffer(value)
+  value = encoder.encode(value, opts.valueEncoding || this.valueEncoding)
 
   var self = this
   this.ready(function () {
-    add(self, links, value, opts, cb)
+    add(self, links, value, opts, function (err, node) {
+      if (err) return cb(err)
+      node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
+      cb(null, node)
+    })
   })
 }
 
-Hyperlog.prototype.append = function (value, cb) {
+Hyperlog.prototype.append = function (value, opts, cb) {
+  if (typeof opts === 'function') {
+    cb = opts
+    opts = {}
+  }
   if (!cb) cb = noop
+  if (!opts) opts = {}
   var self = this
+  value = encoder.encode(value, opts.valueEncoding || this.valueEncoding)
+
   this.lock(function (release) {
     self.heads(function (err, heads) {
       if (err) return release(cb, err)
-      add(self, heads, value, {release: release}, cb)
+      add(self, heads, value, {release: release}, function (err, node) {
+        if (err) return cb(err)
+        node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
+        cb(null, node)
+      })
     })
   })
 }
