@@ -43,6 +43,29 @@ tape('clones', function (t) {
   })
 })
 
+tape('clones with valueEncoding', function (t) {
+  var hyper = hyperlog(memdb(), {valueEncoding: 'json'})
+  var clone = hyperlog(memdb(), {valueEncoding: 'json'})
+
+  hyper.add(null, 'a', function () {
+    hyper.add(null, 'b', function () {
+      hyper.add(null, 'c', function () {
+        sync(hyper, clone, function (err) {
+          t.error(err)
+          toJSON(clone, function (err, map1) {
+            t.error(err)
+            toJSON(hyper, function (err, map2) {
+              t.error(err)
+              t.same(map1, map2, 'logs are synced')
+              t.end()
+            })
+          })
+        })
+      })
+    })
+  })
+})
+
 tape('syncs with initial subset', function (t) {
   var hyper = hyperlog(memdb())
   var clone = hyperlog(memdb())
