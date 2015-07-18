@@ -4,28 +4,28 @@
   "description": "Merkle DAG that replicates based on scuttlebutt logs and causal linking",
   "main": "index.js",
   "dependencies": {
-    "after-all": "^2.0.1",
-    "bitfield": "^1.1.1",
+    "after-all": "^2.0.2",
+    "bitfield": "^1.1.2",
     "brfs": "^1.4.0",
-    "cuid": "^1.2.4",
+    "cuid": "^1.2.5",
     "debug": "^2.2.0",
-    "duplexify": "^3.2.0",
-    "framed-hash": "^1.0.0",
-    "from2": "^1.3.0",
-    "length-prefixed-stream": "^1.1.0",
+    "duplexify": "^3.4.2",
+    "framed-hash": "^1.1.0",
+    "from2": "^2.1.0",
+    "length-prefixed-stream": "^1.3.0",
     "level-enumerate": "^1.0.1",
-    "level-logs": "^1.0.0",
+    "level-logs": "^1.1.0",
     "lexicographic-integer": "^1.1.0",
-    "mutexify": "^1.0.1",
-    "protocol-buffers": "^2.6.0",
+    "mutexify": "^1.1.0",
+    "protocol-buffers": "^3.1.2",
     "pump": "^1.0.0",
     "stream-collector": "^1.0.1",
-    "through2": "^0.6.3"
+    "through2": "^2.0.0"
   },
   "devDependencies": {
     "memdb": "^1.0.1",
     "standard": "^4.5.4",
-    "tape": "^3.5.0"
+    "tape": "^4.0.0"
   },
   "browserify": {
     "transform": [
