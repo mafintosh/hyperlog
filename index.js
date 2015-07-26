@@ -115,6 +115,16 @@ Hyperlog.prototype.get = function (key, opts, cb) {
 var add = function (dag, links, value, opts, cb) {
   var logLinks = []
   var id = opts.log || dag.id
+  for (var i = 0; i < links.length; i++) {
+    if (typeof links[i] !== 'string') links[i] = links[i].key
+  }
+  var node = {
+    log: id,
+    key: hash(links, value),
+    value: value,
+    links: links
+  }
+  dag.emit('preadd', node)
 
   var next = after(function (err) {
     if (err) return cb(err)
@@ -123,14 +133,8 @@ var add = function (dag, links, value, opts, cb) {
       dag.logs.head(id, function (err, seq) {
         if (err) return release(cb, err)
 
-        var node = {
-          change: dag.changes + 1,
-          log: id,
-          seq: seq + 1,
-          key: hash(links, value),
-          value: value,
-          links: links
-        }
+        node.change = dag.changes + 1
+        node.seq = seq + 1
 
         if (opts.hash && node.key !== opts.hash) return release(cb, CHECKSUM_MISMATCH)
         if (opts.seq && node.seq !== opts.seq) return release(cb, INVALID_LOG)
@@ -162,7 +166,7 @@ var add = function (dag, links, value, opts, cb) {
           dag.db.batch(batch, function (err) {
             if (err) return release(cb, err)
             dag.changes = node.change
-            dag.emit('add')
+            dag.emit('add', node)
             release(cb, null, node)
           })
         })
@@ -183,8 +187,7 @@ var add = function (dag, links, value, opts, cb) {
     }
   }
 
-  for (var i = 0; i < links.length; i++) {
-    if (typeof links[i] !== 'string') links[i] = links[i].key
+  for (i = 0; i < links.length; i++) {
     dag.get(links[i], nextLink())
   }
 }
