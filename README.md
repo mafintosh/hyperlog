@@ -178,6 +178,22 @@ Options include:
 If you send `metadata` it will be emitted as an `metadata` event on the stream.
 A detailed write up on how the graph replicates will be added later.
 
+#### log.on('preadd', function (node) {})
+
+On the same tick as `log.add()` is called, this event fires with the `node`
+about to be inserted into the log. At this stage of the add process, node has
+these properties:
+
+* `node.log`
+* `node.key`
+* `node.value`
+* `node.links`
+
+#### log.on('add', function (node) {})
+
+After a node has been successfully added to the log, this event fires with the
+full `node` object that the callback to `.add()` gets.
+
 ## License
 
 MIT
