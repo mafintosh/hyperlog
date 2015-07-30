@@ -20,6 +20,7 @@ var CHANGES = '!changes!'
 var NODES = '!nodes!'
 var HEADS = '!heads!'
 
+var INVALID_SIGNATURE = new Error('Invalid signature')
 var CHECKSUM_MISMATCH = new Error('Checksum mismatch')
 var INVALID_LOG = new Error('Invalid log sequence')
 
@@ -42,6 +43,9 @@ var Hyperlog = function (db, opts) {
   this.changes = 0
   this.setMaxListeners(0)
   this.valueEncoding = opts.valueEncoding || opts.encoding || 'binary'
+  this.identity = opts.identity || null
+  this.verify = opts.verify || null
+  this.sign = opts.sign || null
 
   var self = this
   var getId = opts.getId || function (cb) {
@@ -121,6 +125,8 @@ var add = function (dag, links, value, opts, cb) {
   var node = {
     log: id,
     key: hash(links, value),
+    identity: opts.identity || null,
+    signature: opts.signature || null,
     value: value,
     links: links
   }
@@ -173,9 +179,27 @@ var add = function (dag, links, value, opts, cb) {
       })
     }
 
-    if (opts.release) return onlocked(opts.release)
+    var done = function () {
+      if (opts.release) return onlocked(opts.release)
+      dag.lock(onlocked)
+    }
 
-    dag.lock(onlocked)
+    if (node.log === dag.id) { // we own this node
+      if (!dag.sign || node.signature) return done()
+      dag.sign(node, function (err, sig) {
+        if (err) return cb(err)
+        node.identity = dag.identity
+        node.signature = sig
+        done()
+      })
+    } else {
+      if (!dag.verify) return done()
+      dag.verify(node, function (err, valid) {
+        if (err) return cb(err)
+        if (!valid) return cb(INVALID_SIGNATURE)
+        done()
+      })
+    }
   })
 
   var nextLink = function () {
