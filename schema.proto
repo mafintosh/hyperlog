@@ -1,10 +1,12 @@
 message Node {
-  required uint32 change = 1;
-  required string key    = 2;
-  required string log    = 3;
-  optional uint32 seq    = 4;
-  required bytes value   = 5;
-  repeated string links  = 6;
+  required uint32 change   = 1;
+  required string key      = 2;
+  required string log      = 3;
+  optional uint32 seq      = 4;
+  optional bytes identity  = 7;
+  optional bytes signature = 8;
+  required bytes value     = 5;
+  repeated string links    = 6;
 }
 
 message Entry {

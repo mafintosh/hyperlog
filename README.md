@@ -59,6 +59,25 @@ Create a new log instance. Options include:
 }
 ```
 
+You can also pass in a `identity` and a `sign` and `verify` function
+which can be used to create a signed log
+
+``` js
+{
+  identity: aPublicKeyBuffer, // will be added to all nodes you insert
+  sign: function (node, cb) {
+    // will be called with all nodes you add
+    var signatureBuffer = someCrypto.sign(node.key, mySecretKey)
+    cb(null, signatureBuffer)
+  },
+  verify: function (node, cb) {
+    // will be called with all nodes you receive
+    if (!node.signature) return cb(null, false)
+    cb(null, someCrypto.verify(node.key, node.signature. node.identity))
+  }
+}
+```
+
 #### `log.add(links, value, opts={}, [cb])`
 
 Add a new node to the graph. `links` should be an array of node keys that this node links to.
