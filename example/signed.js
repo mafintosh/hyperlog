@@ -1,8 +1,25 @@
 var hyperlog = require('../')
 var memdb = require('memdb')
+var sodium = require('sodium').api
+var eq = require('buffer-equals')
 
-var log = hyperlog(memdb())
-var clone = hyperlog(memdb())
+var keys = sodium.crypto_sign_keypair()
+var log = hyperlog(memdb(), {
+  identity: keys.publicKey,
+  sign: function (node, cb) {
+    var bkey = Buffer(node.key, 'hex')
+    cb(null, sodium.crypto_sign(bkey, keys.secretKey))
+  }
+})
+var clone = hyperlog(memdb(), {
+  verify: function (node, cb) {
+    if (!node.signature) return cb(null, false)
+    if (!eq(node.identity, keys.publicKey)) return cb(null, false)
+    var bkey = Buffer(node.key, 'hex')
+    var m = sodium.crypto_sign_open(node.signature, node.identity)
+    cb(null, eq(m, bkey))
+  }
+})
 
 var sync = function (a, b) {
   a = a.createReplicationStream({mode: 'push'})
