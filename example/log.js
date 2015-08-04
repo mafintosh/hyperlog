@@ -1,4 +1,4 @@
-var hyperlog = require('./')
+var hyperlog = require('../')
 var memdb = require('memdb')
 
 var log = hyperlog(memdb())
