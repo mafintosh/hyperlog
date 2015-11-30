@@ -157,9 +157,11 @@ Options include:
 
 ``` js
 {
-  since: changeNumber     // only returns changes AFTER the number
+  since: changeNumber     // only returns changes AFTER the number  
   live: false             // never close the change stream
   tail: false             // since = lastChange
+  limit: number           // (for live  streams) only return up to `limit` changes
+  until: number           // (for non-live streams) only returns changed BEFORE the number
   valueEncoding: 'binary'
 }
 ```
