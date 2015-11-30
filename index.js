@@ -262,7 +262,7 @@ var createLiveStream = function (dag, opts) {
 Hyperlog.prototype.createReadStream = function (opts) {
   if (!opts) opts = {}
   if (opts.tail) {
-    opts.since = this.changes;
+    opts.since = this.changes
   }
   if (opts.live) return createLiveStream(this, opts)
 
