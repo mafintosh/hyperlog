@@ -172,3 +172,21 @@ tape('deduplicates', function (t) {
     })
   })
 })
+
+tape('live replication encoding', function (t) {
+  t.plan(2)
+  var h0 = hyperlog(memdb(), { valueEncoding: 'json' })
+  var h1 = hyperlog(memdb(), { valueEncoding: 'json' })
+  h1.createReadStream({ live: true })
+    .on('data', function (data) {
+      t.deepEqual(data.value, { msg: 'hello world' })
+    })
+
+  var r0 = h0.replicate({ live: true })
+  var r1 = h1.replicate({ live: true })
+
+  h0.add(null, { msg: 'hello world' }, function (err, node) {
+    t.error(err)
+    r0.pipe(r1).pipe(r0)
+  })
+})
