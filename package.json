@@ -24,8 +24,10 @@
     "through2": "^2.0.0"
   },
   "devDependencies": {
+    "bs58": "^3.0.0",
     "memdb": "^1.0.1",
     "standard": "^5.0.0",
+    "multihashing": "^0.2.0",
     "tape": "^4.0.0"
   },
   "browserify": {
