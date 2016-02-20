@@ -14,6 +14,7 @@ var replicate = require('./lib/replicate')
 var messages = require('./lib/messages')
 var hash = require('./lib/hash')
 var encoder = require('./lib/encode')
+var defined = require('defined')
 
 var ID = '!!id'
 var CHANGES = '!changes!'
@@ -35,20 +36,22 @@ var Hyperlog = function (db, opts) {
 
   events.EventEmitter.call(this)
 
-  this.id = opts.id || null
+  this.id = defined(opts.id, null)
   this.enumerate = enumerate(db, {prefix: 'enum'})
   this.db = db
   this.logs = logs(db, {prefix: 'logs', valueEncoding: messages.Entry})
-  this.lock = opts.lock || mutexify()
+  this.lock = defined(opts.lock, mutexify())
   this.changes = 0
   this.setMaxListeners(0)
-  this.valueEncoding = opts.valueEncoding || opts.encoding || 'binary'
-  this.identity = opts.identity || null
-  this.verify = opts.verify || null
-  this.sign = opts.sign || null
+  this.valueEncoding = defined(opts.valueEncoding, opts.encoding, 'binary')
+  this.identity = defined(opts.identity, null)
+  this.verify = defined(opts.verify, null)
+  this.sign = defined(opts.sign, null)
+  this.hash = defined(opts.hash, hash)
+  this.asyncHash = defined(opts.asyncHash, null)
 
   var self = this
-  var getId = opts.getId || function (cb) {
+  var getId = defined(opts.getId, function (cb) {
     db.get(ID, {valueEncoding: 'utf-8'}, function (_, id) {
       if (id) return cb(null, id)
       id = cuid()
@@ -56,7 +59,7 @@ var Hyperlog = function (db, opts) {
         cb(null, id)
       })
     })
-  }
+  })
 
   this.lock(function (release) {
     collect(db.createKeyStream({gt: CHANGES, lt: CHANGES + '~', reverse: true, limit: 1}), function (_, keys) {
@@ -116,15 +119,12 @@ Hyperlog.prototype.get = function (key, opts, cb) {
   })
 }
 
-var add = function (dag, links, value, opts, cb) {
+var add = function (dag, links, value, key, opts, cb) {
   var logLinks = []
   var id = opts.log || dag.id
-  for (var i = 0; i < links.length; i++) {
-    if (typeof links[i] !== 'string') links[i] = links[i].key
-  }
   var node = {
     log: id,
-    key: hash(links, value),
+    key: key,
     identity: opts.identity || null,
     signature: opts.signature || null,
     value: value,
@@ -211,7 +211,7 @@ var add = function (dag, links, value, opts, cb) {
     }
   }
 
-  for (i = 0; i < links.length; i++) {
+  for (var i = 0; i < links.length; i++) {
     dag.get(links[i], nextLink())
   }
 }
@@ -296,16 +296,31 @@ Hyperlog.prototype.add = function (links, value, opts, cb) {
   if (!opts) opts = {}
   if (!links) links = []
   if (!Array.isArray(links)) links = [links]
-  value = encoder.encode(value, opts.valueEncoding || this.valueEncoding)
-
-  var self = this
-  this.ready(function () {
-    add(self, links, value, opts, function (err, node) {
-      if (err) return cb(err)
-      node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
-      cb(null, node)
-    })
+  links = links.map(function (link) {
+    return (typeof link !== 'string' ? link.key : link)
   })
+  var self = this
+
+  var encodedValue = encoder.encode(value, opts.valueEncoding || self.valueEncoding)
+
+  if (this.asyncHash) {
+    this.asyncHash(links, encodedValue, postHashing)
+  } else {
+    var key = this.hash(links, encodedValue)
+    postHashing(null, key)
+  }
+
+  function postHashing (err, key) {
+    if (err) return cb(err)
+
+    self.ready(function () {
+      add(self, links, encodedValue, key, opts, function (err, node) {
+        if (err) return cb(err)
+        node.value = encoder.decode(encodedValue, opts.valueEncoding || self.valueEncoding)
+        cb(null, node)
+      })
+    })
+  }
 }
 
 Hyperlog.prototype.append = function (value, opts, cb) {
@@ -316,16 +331,12 @@ Hyperlog.prototype.append = function (value, opts, cb) {
   if (!cb) cb = noop
   if (!opts) opts = {}
   var self = this
-  value = encoder.encode(value, opts.valueEncoding || this.valueEncoding)
 
   this.lock(function (release) {
     self.heads(function (err, heads) {
       if (err) return release(cb, err)
-      add(self, heads, value, {release: release}, function (err, node) {
-        if (err) return cb(err)
-        node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
-        cb(null, node)
-      })
+      opts.release = release
+      self.add(heads, value, opts, cb)
     })
   })
 }

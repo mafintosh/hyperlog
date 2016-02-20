@@ -9,6 +9,7 @@
     "brfs": "^1.4.0",
     "cuid": "^1.2.5",
     "debug": "^2.2.0",
+    "defined": "^1.0.0",
     "duplexify": "^3.4.2",
     "framed-hash": "^1.1.0",
     "from2": "^2.1.0",
@@ -23,8 +24,10 @@
     "through2": "^2.0.0"
   },
   "devDependencies": {
+    "bs58": "^3.0.0",
     "memdb": "^1.0.1",
     "standard": "^5.0.0",
+    "multihashing": "^0.2.0",
     "tape": "^4.0.0"
   },
   "browserify": {
