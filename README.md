@@ -48,19 +48,23 @@ future. For now see the source code.
 
 ## API
 
-#### `log = hyperlog(db, [options])`
+#### `log = hyperlog(db, opts={})`
 
-Create a new log instance. Options include:
+Create a new log instance. Valid keys for `opts` include:
 
-``` js
-{
-  id: 'a-globally-unique-peer-id',
-  valueEncoding: 'a levelup-style encoding property' // example: 'json'
-}
-```
+- `id` - some (ideally globally unique) string identifier for the log.
+- `valueEncoding` - a [levelup-style](https://github.com/Level/levelup#options)
+  encoding string or object (e.g. `"json"`)
+- `hashFunction(links, value)` - a hash function that runs synchronously.
+  Defaults to a SHA-256 implementation.
+- `asyncHashFunction(links, value, cb)` - an asynchronous hash function with
+  node-style callback (`cb(err, hash)`).
+- `identity`, `sign`, `verify` - values for creating a cryptographically signed
+  feed. See below.
 
-You can also pass in a `identity` and a `sign` and `verify` function
-which can be used to create a signed log
+
+You can also pass in an `identity` and `sign`/`verify` functions which can be
+used to create a signed log:
 
 ``` js
 {
