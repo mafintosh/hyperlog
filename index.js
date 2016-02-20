@@ -47,8 +47,8 @@ var Hyperlog = function (db, opts) {
   this.identity = defined(opts.identity, null)
   this.verify = defined(opts.verify, null)
   this.sign = defined(opts.sign, null)
-  this.hashFunction = defined(opts.hashFunction, hash)
-  this.asyncHashFunction = defined(opts.asyncHashFunction, null)
+  this.hash = defined(opts.hash, hash)
+  this.asyncHash = defined(opts.asyncHash, null)
 
   var self = this
   var getId = defined(opts.getId, function (cb) {
@@ -303,18 +303,15 @@ Hyperlog.prototype.add = function (links, value, opts, cb) {
 
   var encodedValue = encoder.encode(value, opts.valueEncoding || self.valueEncoding)
 
-  if (this.asyncHashFunction) {
-    this.asyncHashFunction(links, encodedValue, postHashing)
+  if (this.asyncHash) {
+    this.asyncHash(links, encodedValue, postHashing)
   } else {
-    var key = this.hashFunction(links, encodedValue)
+    var key = this.hash(links, encodedValue)
     postHashing(null, key)
   }
 
   function postHashing (err, key) {
-    if (err) {
-      cb(err)
-      return
-    }
+    if (err) return cb(err)
 
     self.ready(function () {
       add(self, links, encodedValue, key, opts, function (err, node) {

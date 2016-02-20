@@ -55,10 +55,10 @@ Create a new log instance. Valid keys for `opts` include:
 - `id` - some (ideally globally unique) string identifier for the log.
 - `valueEncoding` - a [levelup-style](https://github.com/Level/levelup#options)
   encoding string or object (e.g. `"json"`)
-- `hashFunction(links, value)` - a hash function that runs synchronously.
-  Defaults to a SHA-256 implementation.
-- `asyncHashFunction(links, value, cb)` - an asynchronous hash function with
-  node-style callback (`cb(err, hash)`).
+- `hash(links, value)` - a hash function that runs synchronously. Defaults to a
+  SHA-256 implementation.
+- `asyncHash(links, value, cb)` - an asynchronous hash function with node-style
+  callback (`cb(err, hash)`).
 - `identity`, `sign`, `verify` - values for creating a cryptographically signed
   feed. See below.
 
