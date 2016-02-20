@@ -46,6 +46,8 @@ var Hyperlog = function (db, opts) {
   this.identity = opts.identity || null
   this.verify = opts.verify || null
   this.sign = opts.sign || null
+  this.hashFunction = opts.hashFunction || hash
+  this.asyncHashFunction = opts.asyncHashFunction || null
 
   var self = this
   var getId = opts.getId || function (cb) {
@@ -116,15 +118,12 @@ Hyperlog.prototype.get = function (key, opts, cb) {
   })
 }
 
-var add = function (dag, links, value, opts, cb) {
+var add = function (dag, links, value, key, opts, cb) {
   var logLinks = []
   var id = opts.log || dag.id
-  for (var i = 0; i < links.length; i++) {
-    if (typeof links[i] !== 'string') links[i] = links[i].key
-  }
   var node = {
     log: id,
-    key: hash(links, value),
+    key: key,
     identity: opts.identity || null,
     signature: opts.signature || null,
     value: value,
@@ -211,7 +210,7 @@ var add = function (dag, links, value, opts, cb) {
     }
   }
 
-  for (i = 0; i < links.length; i++) {
+  for (var i = 0; i < links.length; i++) {
     dag.get(links[i], nextLink())
   }
 }
@@ -296,16 +295,34 @@ Hyperlog.prototype.add = function (links, value, opts, cb) {
   if (!opts) opts = {}
   if (!links) links = []
   if (!Array.isArray(links)) links = [links]
-  value = encoder.encode(value, opts.valueEncoding || this.valueEncoding)
-
-  var self = this
-  this.ready(function () {
-    add(self, links, value, opts, function (err, node) {
-      if (err) return cb(err)
-      node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
-      cb(null, node)
-    })
+  links = links.map(function (link) {
+    return (typeof link !== 'string' ? link.key : link)
   })
+  var self = this
+
+  var encodedValue = encoder.encode(value, opts.valueEncoding || self.valueEncoding)
+
+  if (this.asyncHashFunction) {
+    this.asyncHashFunction(links, encodedValue, postHashing)
+  } else {
+    var key = this.hashFunction(links, encodedValue)
+    postHashing(null, key)
+  }
+
+  function postHashing (err, key) {
+    if (err) {
+      cb(err)
+      return
+    }
+
+    self.ready(function () {
+      add(self, links, encodedValue, key, opts, function (err, node) {
+        if (err) return cb(err)
+        node.value = encoder.decode(encodedValue, opts.valueEncoding || self.valueEncoding)
+        cb(null, node)
+      })
+    })
+  }
 }
 
 Hyperlog.prototype.append = function (value, opts, cb) {
@@ -316,7 +333,6 @@ Hyperlog.prototype.append = function (value, opts, cb) {
   if (!cb) cb = noop
   if (!opts) opts = {}
   var self = this
-  value = encoder.encode(value, opts.valueEncoding || this.valueEncoding)
 
   this.lock(function (release) {
     self.heads(function (err, heads) {
