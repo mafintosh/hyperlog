@@ -14,6 +14,7 @@ var replicate = require('./lib/replicate')
 var messages = require('./lib/messages')
 var hash = require('./lib/hash')
 var encoder = require('./lib/encode')
+var defined = require('defined')
 
 var ID = '!!id'
 var CHANGES = '!changes!'
@@ -35,22 +36,22 @@ var Hyperlog = function (db, opts) {
 
   events.EventEmitter.call(this)
 
-  this.id = opts.id || null
+  this.id = defined(opts.id, null)
   this.enumerate = enumerate(db, {prefix: 'enum'})
   this.db = db
   this.logs = logs(db, {prefix: 'logs', valueEncoding: messages.Entry})
-  this.lock = opts.lock || mutexify()
+  this.lock = defined(opts.lock, mutexify())
   this.changes = 0
   this.setMaxListeners(0)
-  this.valueEncoding = opts.valueEncoding || opts.encoding || 'binary'
-  this.identity = opts.identity || null
-  this.verify = opts.verify || null
-  this.sign = opts.sign || null
-  this.hashFunction = opts.hashFunction || hash
-  this.asyncHashFunction = opts.asyncHashFunction || null
+  this.valueEncoding = defined(opts.valueEncoding, opts.encoding, 'binary')
+  this.identity = defined(opts.identity, null)
+  this.verify = defined(opts.verify, null)
+  this.sign = defined(opts.sign, null)
+  this.hashFunction = defined(opts.hashFunction, hash)
+  this.asyncHashFunction = defined(opts.asyncHashFunction, null)
 
   var self = this
-  var getId = opts.getId || function (cb) {
+  var getId = defined(opts.getId, function (cb) {
     db.get(ID, {valueEncoding: 'utf-8'}, function (_, id) {
       if (id) return cb(null, id)
       id = cuid()
@@ -58,7 +59,7 @@ var Hyperlog = function (db, opts) {
         cb(null, id)
       })
     })
-  }
+  })
 
   this.lock(function (release) {
     collect(db.createKeyStream({gt: CHANGES, lt: CHANGES + '~', reverse: true, limit: 1}), function (_, keys) {
