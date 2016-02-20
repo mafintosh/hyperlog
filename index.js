@@ -321,11 +321,8 @@ Hyperlog.prototype.append = function (value, opts, cb) {
   this.lock(function (release) {
     self.heads(function (err, heads) {
       if (err) return release(cb, err)
-      add(self, heads, value, {release: release}, function (err, node) {
-        if (err) return cb(err)
-        node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
-        cb(null, node)
-      })
+      opts.release = release
+      self.add(heads, value, opts, cb)
     })
   })
 }
