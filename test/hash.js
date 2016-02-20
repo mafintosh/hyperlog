@@ -23,7 +23,7 @@ var asyncSha2 = function (links, value, cb) {
 
 tape('add node using sha1', function (t) {
   var hyper = hyperlog(memdb(), {
-    hashFunction: sha1
+    hash: sha1
   })
 
   hyper.add(null, 'hello world', function (err, node) {
@@ -35,7 +35,7 @@ tape('add node using sha1', function (t) {
 
 tape('add node with links using sha1', function (t) {
   var hyper = hyperlog(memdb(), {
-    hashFunction: sha1
+    hash: sha1
   })
 
   hyper.add(null, 'hello', function (err, node) {
@@ -51,7 +51,7 @@ tape('add node with links using sha1', function (t) {
 
 tape('add node using async multihash', function (t) {
   var hyper = hyperlog(memdb(), {
-    asyncHashFunction: asyncSha2
+    asyncHash: asyncSha2
   })
 
   hyper.add(null, 'hello world', function (err, node) {
@@ -63,7 +63,7 @@ tape('add node using async multihash', function (t) {
 
 tape('add node with links using async multihash', function (t) {
   var hyper = hyperlog(memdb(), {
-    asyncHashFunction: asyncSha2
+    asyncHash: asyncSha2
   })
 
   hyper.add(null, 'hello', function (err, node) {
