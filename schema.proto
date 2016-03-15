@@ -13,6 +13,8 @@ message Entry {
   required uint32 change = 1;
   required string node   = 2;
   repeated string links  = 3;
+  optional string log = 4;
+  optional uint32 seq = 5;
 }
 
 message Log {
