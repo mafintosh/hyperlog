@@ -338,25 +338,28 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
     })
     var encodedValue = encoder.encode(doc.value, opts.valueEncoding || self.valueEncoding)
 
+    var node = {
+      log: opts.log || self.id,
+      key: null,
+      identity: opts.identity || null,
+      signature: opts.signature || null,
+      value: encodedValue,
+      links: links
+    }
+    nodes[docIndex] = node
+
     if (self.asyncHash) {
+      self.emit('preadd', node)
       self.asyncHash(links, encodedValue, postHashing)
     } else {
       var key = self.hash(links, encodedValue)
+      node.key = key
+      self.emit('preadd', node)
       postHashing(null, key)
     }
     function postHashing (err, key) {
       if (err) return cb(err)
-
-      var node = {
-        log: opts.log || self.id,
-        key: key,
-        identity: opts.identity || null,
-        signature: opts.signature || null,
-        value: encodedValue,
-        links: links
-      }
-      nodes[docIndex] = node
-      self.emit('preadd', node)
+      node.key = key
 
       getLinks(self, id, links, function (err, lns) {
         if (err) return cb(err)
