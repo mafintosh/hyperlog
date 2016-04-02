@@ -80,3 +80,21 @@ tape('add node with links using async multihash', function (t) {
     })
   })
 })
+
+tape('preadd event with async hash', function (t) {
+  var hyper = hyperlog(memdb(), {
+    asyncHash: asyncSha2
+  })
+
+  var prenode = null
+  hyper.on('preadd', function (node) {
+    prenode = node
+  })
+
+  hyper.add(null, 'hello world', function (err, node) {
+    t.error(err)
+    t.same(node.key, 'QmaozNR7DZHQK1ZcU9p7QdrshMvXqWK6gpu5rmrkPdT3L4')
+    t.end()
+  })
+  t.equal(prenode.key, null)
+})
