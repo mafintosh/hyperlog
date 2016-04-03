@@ -94,7 +94,7 @@ log.add([link], value, function(err, node) {
   {
     change: ... // the change number for this node in the local log
     key:   ... // the hash of the node. this is also the key of the node
-    value:  ... // the value (as a buffer) you inserted
+    value:  ... // the value (as the valueEncoding type, default buffer) you inserted
     log:    ... // the peer log this node was appended to
     seq:    ... // the peer log seq number
     links: ['hash-of-link-1', ...]
@@ -109,6 +109,25 @@ Optionally supply an `opts.valueEncoding`.
 Add a value that links all the current heads.
 
 Optionally supply an `opts.valueEncoding`.
+
+#### `log.batch(docs, opts={}, [cb])`
+
+Add many documents atomically to the log at once: either all the docs are
+inserted successfully or nothing is inserted.
+
+`docs` is an array of objects where each object looks like:
+
+``` js
+{
+  links: [...] // array of ancestor node keys
+  value: ... // the value to insert
+}
+```
+
+The callback `cb(err, nodes)` is called with an array of `nodes`. Each `node` is
+of the form described in the `log.add()` section.
+
+You may specify an `opts.valueEncoding`.
 
 #### `log.get(hash, opts={}, cb)`
 

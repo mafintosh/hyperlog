@@ -15,6 +15,7 @@ var messages = require('./lib/messages')
 var hash = require('./lib/hash')
 var encoder = require('./lib/encode')
 var defined = require('defined')
+var once = require('once')
 
 var ID = '!!id'
 var CHANGES = '!changes!'
@@ -119,89 +120,60 @@ Hyperlog.prototype.get = function (key, opts, cb) {
   })
 }
 
-var add = function (dag, links, value, key, opts, cb) {
-  var logLinks = []
-  var id = opts.log || dag.id
-  var node = {
-    log: id,
-    key: key,
-    identity: opts.identity || null,
-    signature: opts.signature || null,
-    value: value,
-    links: links
+var addBatch = function (dag, node, opts, cb) {
+  if (opts.hash && node.key !== opts.hash) return cb(CHECKSUM_MISMATCH)
+  if (opts.seq && node.seq !== opts.seq) return cb(INVALID_LOG)
+
+  var log = {
+    change: node.change,
+    node: node.key,
+    links: node.logLinks
   }
-  dag.emit('preadd', node)
+  var onclone = function (clone) {
+    if (!opts.log) return cb(null, clone, [])
+    cb(null, clone, [
+      {
+        key: dag.logs.key(node.log, node.seq),
+        value: messages.Entry.encode(log)
+      }
+    ])
+  }
+  function done () {
+    dag.get(node.key, { valueEncoding: 'binary' }, function (_, clone) {
+      if (clone) return onclone(clone)
 
-  var next = after(function (err) {
-    if (err) return cb(err)
+      var batch = []
+      var links = node.links
+      for (var i = 0; i < links.length; i++) batch.push({type: 'del', key: HEADS + links[i]})
+      batch.push({type: 'put', key: CHANGES + lexint.pack(node.change, 'hex'), value: node.key})
+      batch.push({type: 'put', key: NODES + node.key, value: messages.Node.encode(node)})
+      batch.push({type: 'put', key: HEADS + node.key, value: node.key})
+      batch.push({type: 'put', key: dag.logs.key(node.log, node.seq), value: messages.Entry.encode(log)})
 
-    var onlocked = function (release) {
-      dag.logs.head(id, function (err, seq) {
-        if (err) return release(cb, err)
+      cb(null, node, batch)
+    })
+  }
 
-        node.change = dag.changes + 1
-        node.seq = seq + 1
+  if (node.log === dag.id) { // we own this node
+    if (!dag.sign || node.signature) return done()
+    dag.sign(node, function (err, sig) {
+      if (err) return cb(err)
+      node.identity = dag.identity
+      node.signature = sig
+      done()
+    })
+  } else {
+    if (!dag.verify) return done()
+    dag.verify(node, function (err, valid) {
+      if (err) return cb(err)
+      if (!valid) return cb(INVALID_SIGNATURE)
+      done()
+    })
+  }
+}
 
-        if (opts.hash && node.key !== opts.hash) return release(cb, CHECKSUM_MISMATCH)
-        if (opts.seq && node.seq !== opts.seq) return release(cb, INVALID_LOG)
-
-        var log = {
-          change: dag.changes + 1,
-          node: node.key,
-          links: logLinks
-        }
-
-        var onclone = function (clone) {
-          if (!opts.log) return release(cb, null, clone)
-          dag.db.put(dag.logs.key(node.log, node.seq), messages.Entry.encode(log), function (err) {
-            if (err) return release(cb, err)
-            release(cb, null, clone)
-          })
-        }
-
-        dag.get(node.key, { valueEncoding: 'binary' }, function (_, clone) {
-          if (clone) return onclone(clone)
-
-          var batch = []
-          for (var i = 0; i < links.length; i++) batch.push({type: 'del', key: HEADS + links[i]})
-          batch.push({type: 'put', key: CHANGES + lexint.pack(node.change, 'hex'), value: node.key})
-          batch.push({type: 'put', key: NODES + node.key, value: messages.Node.encode(node)})
-          batch.push({type: 'put', key: HEADS + node.key, value: node.key})
-          batch.push({type: 'put', key: dag.logs.key(node.log, node.seq), value: messages.Entry.encode(log)})
-
-          dag.db.batch(batch, function (err) {
-            if (err) return release(cb, err)
-            dag.changes = node.change
-            dag.emit('add', node)
-            release(cb, null, node)
-          })
-        })
-      })
-    }
-
-    var done = function () {
-      if (opts.release) return onlocked(opts.release)
-      dag.lock(onlocked)
-    }
-
-    if (node.log === dag.id) { // we own this node
-      if (!dag.sign || node.signature) return done()
-      dag.sign(node, function (err, sig) {
-        if (err) return cb(err)
-        node.identity = dag.identity
-        node.signature = sig
-        done()
-      })
-    } else {
-      if (!dag.verify) return done()
-      dag.verify(node, function (err, valid) {
-        if (err) return cb(err)
-        if (!valid) return cb(INVALID_SIGNATURE)
-        done()
-      })
-    }
-  })
-
+var getLinks = function (dag, id, links, cb) {
+  var logLinks = []
   var nextLink = function () {
     var cb = next()
     return function (err, link) {
@@ -210,6 +182,10 @@ var add = function (dag, links, value, key, opts, cb) {
       cb(null)
     }
   }
+  var next = after(function (err) {
+    if (err) cb(err)
+    else cb(null, logLinks)
+  })
 
   for (var i = 0; i < links.length; i++) {
     dag.get(links[i], nextLink())
@@ -291,35 +267,111 @@ Hyperlog.prototype.createReplicationStream = function (opts) {
 }
 
 Hyperlog.prototype.add = function (links, value, opts, cb) {
-  if (typeof opts === 'function') return this.add(links, value, null, opts)
-  if (!cb) cb = noop
-  if (!opts) opts = {}
-  if (!links) links = []
-  if (!Array.isArray(links)) links = [links]
-  links = links.map(function (link) {
-    return (typeof link !== 'string' ? link.key : link)
-  })
-  var self = this
-
-  var encodedValue = encoder.encode(value, opts.valueEncoding || self.valueEncoding)
-
-  if (this.asyncHash) {
-    this.asyncHash(links, encodedValue, postHashing)
-  } else {
-    var key = this.hash(links, encodedValue)
-    postHashing(null, key)
+  if (typeof opts === 'function') {
+    cb = opts
+    opts = {}
   }
+  if (!cb) cb = noop
+  this.batch([{links: links, value: value}], opts, function (err, nodes) {
+    if (err) cb(err)
+    else cb(null, nodes[0])
+  })
+}
 
-  function postHashing (err, key) {
-    if (err) return cb(err)
+Hyperlog.prototype.batch = function (docs, opts, cb) {
+  if (typeof opts === 'function') {
+    cb = opts
+    opts = {}
+  }
+  cb = once(cb || noop)
+  if (!opts) opts = {}
+  var self = this
+  if (docs.length === 0) return process.nextTick(function () { cb(null, []) })
+  var id = opts.log || self.id
 
+  var nodes = []
+  var batch = []
+  function onlocked (release) {
     self.ready(function () {
-      add(self, links, encodedValue, key, opts, function (err, node) {
-        if (err) return cb(err)
-        node.value = encoder.decode(encodedValue, opts.valueEncoding || self.valueEncoding)
-        cb(null, node)
+      self.logs.head(id, function (err, seq) {
+        if (err) return release(cb, err)
+        else eachDoc(release, seq)
       })
     })
+  }
+
+  function eachDoc (release, seq) {
+    var pending = docs.length
+    nodes.forEach(function (node, index) {
+      node.seq = seq + 1 + index
+      node.change = self.changes + 1 + index
+      if (!node.log) node.log = self.id
+
+      addBatch(self, node, opts, function (err, node, nbatch) {
+        if (err) return release(cb, err)
+        node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
+        nodes[index] = node
+        batch.push.apply(batch, nbatch)
+        if (--pending === 0) commit()
+      })
+    })
+    function commit () {
+      self.db.batch(batch, function (err) {
+        if (err) release(cb, err)
+
+        self.changes = nodes[nodes.length - 1].change
+        nodes.forEach(function (node) {
+          delete node.logLinks
+          self.emit('add', node)
+        })
+        release(cb, null, nodes)
+      })
+    }
+  }
+
+  var pending = docs.length
+  docs.forEach(function (doc, docIndex) {
+    var links = doc.links || []
+    if (!Array.isArray(links)) links = [links]
+    links = links.map(function (link) {
+      return (typeof link !== 'string' ? link.key : link)
+    })
+    var encodedValue = encoder.encode(doc.value, opts.valueEncoding || self.valueEncoding)
+
+    var node = {
+      log: opts.log || self.id,
+      key: null,
+      identity: opts.identity || null,
+      signature: opts.signature || null,
+      value: encodedValue,
+      links: links
+    }
+    nodes[docIndex] = node
+
+    if (self.asyncHash) {
+      self.emit('preadd', node)
+      self.asyncHash(links, encodedValue, postHashing)
+    } else {
+      var key = self.hash(links, encodedValue)
+      node.key = key
+      self.emit('preadd', node)
+      postHashing(null, key)
+    }
+    function postHashing (err, key) {
+      if (err) return cb(err)
+      node.key = key
+
+      getLinks(self, id, links, function (err, lns) {
+        if (err) return cb(err)
+        node.logLinks = lns
+        if (--pending === 0) makeBatch()
+      })
+    }
+  })
+
+  function makeBatch () {
+    if (opts.release) return onlocked(opts.release)
+    self.lock(onlocked)
   }
 }
 
