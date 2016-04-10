@@ -238,6 +238,13 @@ these properties:
 After a node has been successfully added to the log, this event fires with the
 full `node` object that the callback to `.add()` gets.
 
+#### log.on('reject', function (node) {})
+
+When a node is rejected, this event fires. Otherwise the `add` event will fire.
+
+You can track `preadd` events against both `add` and `reject` events in
+combination to know when the log is completely caught up.
+
 ## License
 
 MIT

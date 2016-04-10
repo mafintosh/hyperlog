@@ -308,7 +308,10 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
       if (!node.log) node.log = self.id
 
       addBatch(self, node, opts, function (err, node, nbatch) {
-        if (err) return release(cb, err)
+        if (err) {
+          self.emit('reject', node)
+          return release(cb, err)
+        }
         node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
         nodes[index] = node
         batch.push.apply(batch, nbatch)
