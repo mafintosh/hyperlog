@@ -15,7 +15,6 @@ var messages = require('./lib/messages')
 var hash = require('./lib/hash')
 var encoder = require('./lib/encode')
 var defined = require('defined')
-var once = require('once')
 
 var ID = '!!id'
 var CHANGES = '!changes!'
@@ -120,29 +119,30 @@ Hyperlog.prototype.get = function (key, opts, cb) {
   })
 }
 
-var addBatch = function (dag, node, opts, cb) {
+var toKey = function (link) {
+  return typeof link !== 'string' ? link.key : link
+}
+
+var addBatch = function (dag, node, logLinks, batch, opts, cb) {
   if (opts.hash && node.key !== opts.hash) return cb(CHECKSUM_MISMATCH)
   if (opts.seq && node.seq !== opts.seq) return cb(INVALID_LOG)
 
   var log = {
     change: node.change,
     node: node.key,
-    links: node.logLinks
+    links: logLinks
   }
+
   var onclone = function (clone) {
     if (!opts.log) return cb(null, clone, [])
-    cb(null, clone, [
-      {
-        key: dag.logs.key(node.log, node.seq),
-        value: messages.Entry.encode(log)
-      }
-    ])
+    batch.push({type: 'put', key: dag.logs.key(node.log, node.seq), value: messages.Entry.encode(log)})
+    cb(null, clone)
   }
-  function done () {
+
+  var done = function () {
     dag.get(node.key, { valueEncoding: 'binary' }, function (_, clone) {
       if (clone) return onclone(clone)
 
-      var batch = []
       var links = node.links
       for (var i = 0; i < links.length; i++) batch.push({type: 'del', key: HEADS + links[i]})
       batch.push({type: 'put', key: CHANGES + lexint.pack(node.change, 'hex'), value: node.key})
@@ -150,7 +150,7 @@ var addBatch = function (dag, node, opts, cb) {
       batch.push({type: 'put', key: HEADS + node.key, value: node.key})
       batch.push({type: 'put', key: dag.logs.key(node.log, node.seq), value: messages.Entry.encode(log)})
 
-      cb(null, node, batch)
+      cb(null, node)
     })
   }
 
@@ -283,64 +283,84 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
     cb = opts
     opts = {}
   }
-  cb = once(cb || noop)
+  if (!cb) cb = noop
   if (!opts) opts = {}
-  var self = this
-  if (docs.length === 0) return process.nextTick(function () { cb(null, []) })
-  var id = opts.log || self.id
 
-  var nodes = []
-  var batch = []
-  function onlocked (release) {
+  if (docs.length === 0) return process.nextTick(function () { cb(null, []) })
+
+  var self = this
+  var id = opts.log || self.id
+  var nodes = new Array(docs.length)
+  var logLinks = new Array(docs.length)
+  var batch = [] // dynamic length
+
+  var onlocked = function (release) {
     self.ready(function () {
       self.logs.head(id, function (err, seq) {
         if (err) return release(cb, err)
-        else eachDoc(release, seq)
+        else batchAndRelease(release, seq)
       })
     })
   }
 
-  function eachDoc (release, seq) {
-    var pending = docs.length
+  var batchAndRelease = function (release, seq) {
+    var next = after(function (err) {
+      if (err) return release(cb, err)
+
+      self.db.batch(batch, function (err) {
+        if (err) return release(cb, err)
+
+        self.changes = nodes[nodes.length - 1].change
+        for (var i = 0; i < nodes.length; i++) self.emit('add', nodes[i])
+
+        release(cb, null, nodes)
+      })
+    })
+
     nodes.forEach(function (node, index) {
+      var done = next()
+      var lns = logLinks[index]
+
       node.seq = seq + 1 + index
       node.change = self.changes + 1 + index
       if (!node.log) node.log = self.id
 
-      addBatch(self, node, opts, function (err, node, nbatch) {
+      addBatch(self, node, lns, batch, opts, function (err, node) {
         if (err) {
           self.emit('reject', node)
-          return release(cb, err)
+          return done(err)
         }
         node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
         nodes[index] = node
-        batch.push.apply(batch, nbatch)
-        if (--pending === 0) commit()
+        done()
       })
     })
-    function commit () {
-      self.db.batch(batch, function (err) {
-        if (err) release(cb, err)
-
-        self.changes = nodes[nodes.length - 1].change
-        nodes.forEach(function (node) {
-          delete node.logLinks
-          self.emit('add', node)
-        })
-        release(cb, null, nodes)
-      })
-    }
   }
 
-  var pending = docs.length
-  docs.forEach(function (doc, docIndex) {
+  var next = after(function (err) {
+    if (err) return cb(err)
+    if (opts.release) onlocked(opts.release)
+    else self.lock(onlocked)
+  })
+
+  docs.forEach(function (doc, index) {
+    var done = next()
+    var postHashing = function (err, key) {
+      if (err) return done(err)
+
+      node.key = key
+      getLinks(self, id, links, function (err, lns) {
+        if (err) return done(err)
+        logLinks[index] = lns
+        done()
+      })
+    }
+
     var links = doc.links || []
     if (!Array.isArray(links)) links = [links]
-    links = links.map(function (link) {
-      return (typeof link !== 'string' ? link.key : link)
-    })
-    var encodedValue = encoder.encode(doc.value, opts.valueEncoding || self.valueEncoding)
+    links = links.map(toKey)
 
+    var encodedValue = encoder.encode(doc.value, opts.valueEncoding || self.valueEncoding)
     var node = {
       log: opts.log || self.id,
       key: null,
@@ -349,33 +369,18 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
       value: encodedValue,
       links: links
     }
-    nodes[docIndex] = node
+
+    nodes[index] = node
 
     if (self.asyncHash) {
       self.emit('preadd', node)
       self.asyncHash(links, encodedValue, postHashing)
     } else {
-      var key = self.hash(links, encodedValue)
-      node.key = key
+      node.key = self.hash(links, encodedValue)
       self.emit('preadd', node)
-      postHashing(null, key)
-    }
-    function postHashing (err, key) {
-      if (err) return cb(err)
-      node.key = key
-
-      getLinks(self, id, links, function (err, lns) {
-        if (err) return cb(err)
-        node.logLinks = lns
-        if (--pending === 0) makeBatch()
-      })
+      postHashing(null, node.key)
     }
   })
-
-  function makeBatch () {
-    if (opts.release) return onlocked(opts.release)
-    self.lock(onlocked)
-  }
 }
 
 Hyperlog.prototype.append = function (value, opts, cb) {
