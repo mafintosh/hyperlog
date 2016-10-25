@@ -15,6 +15,7 @@ var messages = require('./lib/messages')
 var hash = require('./lib/hash')
 var encoder = require('./lib/encode')
 var defined = require('defined')
+var uniq = require('uniq')
 
 var ID = '!!id'
 var CHANGES = '!changes!'
@@ -315,6 +316,11 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
 
         release(cb, null, nodes)
       })
+    })
+
+    // Filter duplicates
+    nodes = uniq(nodes, function compare (a, b) {
+      return a.key === b.key ? 0 : 1
     })
 
     nodes.forEach(function (node, index) {
