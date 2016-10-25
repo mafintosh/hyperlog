@@ -87,10 +87,10 @@ tape('deduplicates -- same batch', function (t) {
 
   hyper.batch([doc, doc], function (err, nodes) {
     t.error(err)
-      collect(hyper.createReadStream(), function (err, changes) {
-        t.error(err)
-        t.same(changes.length, 1, 'only one change')
-        t.end()
+    collect(hyper.createReadStream(), function (err, changes) {
+      t.error(err)
+      t.same(changes.length, 1, 'only one change')
+      t.end()
     })
   })
 })
