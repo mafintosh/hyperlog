@@ -79,3 +79,18 @@ tape('deduplicates', function (t) {
     })
   })
 })
+
+tape('deduplicates -- same batch', function (t) {
+  var hyper = hyperlog(memdb())
+
+  var doc = { links: [], value: 'hello world' }
+
+  hyper.batch([doc, doc], function (err, nodes) {
+    t.error(err)
+    collect(hyper.createReadStream(), function (err, changes) {
+      t.error(err)
+      t.same(changes.length, 1, 'only one change')
+      t.end()
+    })
+  })
+})

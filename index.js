@@ -317,9 +317,15 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
       })
     })
 
+    var added = nodes.length > 1 ? {} : null
+
     nodes.forEach(function (node, index) {
+      if (added && added[node.key]) return
+
       var done = next()
       var lns = logLinks[index]
+
+      if (added) added[node.key] = true
 
       node.seq = seq + 1 + index
       node.change = self.changes + 1 + index
