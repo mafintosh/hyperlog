@@ -21,7 +21,8 @@
     "protocol-buffers": "^3.1.2",
     "pump": "^1.0.0",
     "stream-collector": "^1.0.1",
-    "through2": "^2.0.0"
+    "through2": "^2.0.0",
+    "uniq": "^1.0.1"
   },
   "devDependencies": {
     "bs58": "^3.0.0",
