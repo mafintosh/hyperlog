@@ -310,7 +310,12 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
       self.db.batch(batch, function (err) {
         if (err) return release(cb, err)
 
-        self.changes = nodes[nodes.length - 1].change
+        // find the largest change value from the batch (unless it's already
+        // the largest)
+        self.changes = nodes.reduce(function (max, cur) {
+          return Math.max(max, cur.change)
+        }, self.changes)
+
         for (var i = 0; i < nodes.length; i++) self.emit('add', nodes[i])
 
         release(cb, null, nodes)
