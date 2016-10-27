@@ -90,6 +90,7 @@ tape('deduplicates -- same batch', function (t) {
     collect(hyper.createReadStream(), function (err, changes) {
       t.error(err)
       t.same(changes.length, 1, 'only one change')
+      t.same(hyper.changes, 1, 'only one change')
       t.end()
     })
   })
