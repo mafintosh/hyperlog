@@ -310,7 +310,8 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
       self.db.batch(batch, function (err) {
         if (err) return release(cb, err)
 
-        self.changes = nodes[nodes.length - 1].change
+        self.changes = getMaxNodeChangeValue(nodes, self.changes)
+
         for (var i = 0; i < nodes.length; i++) self.emit('add', nodes[i])
 
         release(cb, null, nodes)
@@ -410,6 +411,14 @@ Hyperlog.prototype.append = function (value, opts, cb) {
       self.add(heads, value, opts, cb)
     })
   })
+}
+
+// Returns the highest change #, given an array of nodes and a current change
+// #.
+function getMaxNodeChangeValue (nodes, highest) {
+  return nodes.reduce(function (max, cur) {
+    return Math.max(max, cur.change)
+  }, highest)
 }
 
 module.exports = Hyperlog

@@ -33,3 +33,23 @@ tape('batch', function (t) {
     })
   })
 })
+
+tape('batch dedupe', function (t) {
+  t.plan(4)
+
+  var doc1 = { links: [], value: 'hello world' }
+  var doc2 = { links: [], value: 'hello world 2' }
+
+  var hyper = hyperlog(memdb(), { valueEncoding: 'utf8' })
+
+  hyper.batch([doc1], function (err) {
+    t.error(err)
+    hyper.batch([doc2], function (err) {
+      t.error(err)
+      hyper.batch([doc1], function (err) {
+        t.error(err)
+        t.equal(hyper.changes, 2)
+      })
+    })
+  })
+})
