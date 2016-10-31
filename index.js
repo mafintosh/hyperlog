@@ -323,32 +323,51 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
     })
 
     var added = nodes.length > 1 ? {} : null
+    var idx = 0
+    var batchLock = mutexify()
 
     nodes.forEach(function (node, index) {
-      if (added && added[node.key]) {
-        node.seq = added[node.key].seq
-        node.change = added[node.key].change
-        if (!node.log) node.log = self.id
-        return
-      }
-
       var done = next()
       var lns = logLinks[index]
 
-      if (added) added[node.key] = node
-
-      node.seq = seq + 1 + index
-      node.change = self.changes + 1 + index
       if (!node.log) node.log = self.id
 
-      addBatch(self, node, lns, batch, opts, function (err, node) {
-        if (err) {
-          self.emit('reject', node)
-          return done(err)
+      batchLock(function (release) {
+        var fin = function (err) {
+          done(err)
+          release()
         }
-        node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
-        nodes[index] = node
-        done()
+
+        self.get(node.key, function (_, clone) {
+          if (clone && clone.log === node.log) {
+            // leveldb dedupe
+            node.seq = clone.seq
+            node.change = clone.change
+            return fin()
+          } else if (added && added[node.key]) {
+            // param dedupe
+            node.seq = added[node.key].seq
+            node.change = added[node.key].change
+            return fin()
+          } else {
+            // new node for this log
+            node.seq = seq + 1 + idx
+            node.change = self.changes + 1 + idx
+            idx++
+          }
+
+          if (added) added[node.key] = node
+
+          addBatch(self, node, lns, batch, opts, function (err, node) {
+            if (err) {
+              self.emit('reject', node)
+              return fin(err)
+            }
+            node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
+            nodes[index] = node
+            fin()
+          })
+        })
       })
     })
   }
