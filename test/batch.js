@@ -35,6 +35,28 @@ tape('batch', function (t) {
 })
 
 tape('batch dedupe', function (t) {
+  t.plan(6)
+
+  var doc1 = { links: [], value: 'hello world' }
+  var doc2 = { links: [], value: 'hello world 2' }
+
+  var hyper = hyperlog(memdb(), { valueEncoding: 'utf8' })
+
+  hyper.batch([doc1], function (err) {
+    t.error(err)
+    hyper.batch([doc2], function (err) {
+      t.error(err)
+      hyper.batch([doc1], function (err, nodes) {
+        t.error(err)
+        t.equal(hyper.changes, 2)
+        t.equal(nodes.length, 1)
+        t.equal(nodes[0].change, 1)
+      })
+    })
+  })
+})
+
+tape('batch dedupe 2', function (t) {
   t.plan(4)
 
   var doc1 = { links: [], value: 'hello world' }
@@ -46,7 +68,7 @@ tape('batch dedupe', function (t) {
     t.error(err)
     hyper.batch([doc2], function (err) {
       t.error(err)
-      hyper.batch([doc1], function (err) {
+      hyper.batch([doc2, doc1, doc2], function (err) {
         t.error(err)
         t.equal(hyper.changes, 2)
       })
