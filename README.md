@@ -245,6 +245,16 @@ When a node is rejected, this event fires. Otherwise the `add` event will fire.
 You can track `preadd` events against both `add` and `reject` events in
 combination to know when the log is completely caught up.
 
+## Hyperlog Hygiene
+
+A hyperlog will refer to potentially *many* different logs as it replicates with
+others, each with its own ID. Bear in mind that each hyperlog's underlying
+leveldb contains a notion of what its *own* local ID is. If you make a copy of a
+hyperlog's leveldb and write different data to each copy, the results are
+unpredictable and likely disastrous. Always only use the included replication
+mechanism for making hyperlog copies!
+
+
 ## License
 
 MIT
