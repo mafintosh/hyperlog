@@ -321,6 +321,8 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
 
   var self = this
   var id = opts.log || self.id
+  opts.log = id
+
   var nodes = new Array(docs.length)
   var logLinks = new Array(docs.length)
   var batch = [] // dynamic length
@@ -353,7 +355,8 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
     })
 
     var added = nodes.length > 1 ? {} : null
-    var idx = 0
+    var seqIdx = 1
+    var changeIdx = 1
     var batchLock = mutexify()
 
     nodes.forEach(function (node, index) {
@@ -372,21 +375,19 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
 
         // Check if the to-be-added node already exists in the hyperlog.
         self.get(node.key, function (_, clone) {
-          // It already exists, and it's in our local log.
-          if (clone && clone.log === node.log) {
-            node.seq = clone.seq
+          // It already exists
+          if (clone) {
+            node.seq = seq + (seqIdx++)
             node.change = clone.change
-            return fin()
           // It already exists; it was added in this batch op earlier on.
           } else if (added && added[node.key]) {
             node.seq = added[node.key].seq
             node.change = added[node.key].change
             return fin()
-          // It's either brand new, or exists already in another log.
           } else {
-            node.seq = seq + 1 + idx
-            node.change = self.changes + 1 + idx
-            idx++
+            // new node across all logs
+            node.seq = seq + (seqIdx++)
+            node.change = self.changes + (changeIdx++)
           }
 
           if (added) added[node.key] = node
