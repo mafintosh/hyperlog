@@ -50,6 +50,7 @@ var Hyperlog = function (db, opts) {
   this.hash = defined(opts.hash, hash)
   this.asyncHash = defined(opts.asyncHash, null)
 
+  // Retrieve this hyperlog instance's unique ID.
   var self = this
   var getId = defined(opts.getId, function (cb) {
     db.get(ID, {valueEncoding: 'utf-8'}, function (_, id) {
@@ -61,6 +62,13 @@ var Hyperlog = function (db, opts) {
     })
   })
 
+  // Startup logic to..
+  // 1. Determine & record the largest change # in the db.
+  // 2. Determine this hyperlog db's local ID.
+  //
+  // This is behind a lock in order to ensure that no hyperlog operations
+  // can be performed -- these two values MUST be known before any
+  // hyperlog usage may occur.
   this.lock(function (release) {
     collect(db.createKeyStream({gt: CHANGES, lt: CHANGES + '~', reverse: true, limit: 1}), function (_, keys) {
       self.changes = Math.max(self.changes, keys && keys.length ? lexint.unpack(keys[0].split('!').pop(), 'hex') : 0)
@@ -75,6 +83,9 @@ var Hyperlog = function (db, opts) {
 
 util.inherits(Hyperlog, events.EventEmitter)
 
+// Call callback 'cb' once the hyperlog is ready for use (knows some
+// fundamental properties about itself from the leveldb). If it's already
+// ready, cb is called immediately.
 Hyperlog.prototype.ready = function (cb) {
   if (this.id) return cb()
   this.lock(function (release) {
@@ -83,6 +94,8 @@ Hyperlog.prototype.ready = function (cb) {
   })
 }
 
+// Returns a readable stream of all hyperlog heads. That is, all nodes that no
+// other nodes link to.
 Hyperlog.prototype.heads = function (opts, cb) {
   var self = this
   if (!opts) opts = {}
@@ -104,6 +117,7 @@ Hyperlog.prototype.heads = function (opts, cb) {
   return collect(pump(rs, format), cb)
 }
 
+// Retrieve a single, specific node, given its key.
 Hyperlog.prototype.get = function (key, opts, cb) {
   if (!opts) opts = {}
   if (typeof opts === 'function') {
@@ -119,14 +133,19 @@ Hyperlog.prototype.get = function (key, opts, cb) {
   })
 }
 
+// Utility function to be used in a nodes.reduce() to determine the largest
+// change # present.
 var maxChange = function (max, cur) {
   return Math.max(max, cur.change)
 }
 
+// Consumes either a string or a hyperlog node and returns its key.
 var toKey = function (link) {
   return typeof link !== 'string' ? link.key : link
 }
 
+// Adds a new hyperlog node to an existing array of leveldb batch insertions.
+// This includes performing crypto signing and verification.
 var addBatch = function (dag, node, logLinks, batch, opts, cb) {
   if (opts.hash && node.key !== opts.hash) return cb(CHECKSUM_MISMATCH)
   if (opts.seq && node.seq !== opts.seq) return cb(INVALID_LOG)
@@ -145,6 +164,8 @@ var addBatch = function (dag, node, logLinks, batch, opts, cb) {
 
   var done = function () {
     dag.get(node.key, { valueEncoding: 'binary' }, function (_, clone) {
+      // This node already exists somewhere in the hyperlog; add it to the
+      // log's append-only log, but don't insert it again.
       if (clone) return onclone(clone)
 
       var links = node.links
@@ -158,7 +179,8 @@ var addBatch = function (dag, node, logLinks, batch, opts, cb) {
     })
   }
 
-  if (node.log === dag.id) { // we own this node
+  // Local node; sign it.
+  if (node.log === dag.id) {
     if (!dag.sign || node.signature) return done()
     dag.sign(node, function (err, sig) {
       if (err) return cb(err)
@@ -166,6 +188,7 @@ var addBatch = function (dag, node, logLinks, batch, opts, cb) {
       node.signature = sig
       done()
     })
+  // Remote node; verify it.
   } else {
     if (!dag.verify) return done()
     dag.verify(node, function (err, valid) {
@@ -196,6 +219,8 @@ var getLinks = function (dag, id, links, cb) {
   }
 }
 
+// Produce a readable stream of all nodes added from this point onward, in
+// topographic order.
 var createLiveStream = function (dag, opts) {
   var since = opts.since || 0
   var limit = opts.limit || -1
@@ -239,6 +264,7 @@ var createLiveStream = function (dag, opts) {
   return rs
 }
 
+// Produce a readable stream of nodes in the hyperlog, in topographic order.
 Hyperlog.prototype.createReadStream = function (opts) {
   if (!opts) opts = {}
   if (opts.tail) {
@@ -290,6 +316,7 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
   if (!cb) cb = noop
   if (!opts) opts = {}
 
+  // Bail asynchronously; nothing to add.
   if (docs.length === 0) return process.nextTick(function () { cb(null, []) })
 
   var self = this
@@ -308,6 +335,9 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
   }
 
   var batchAndRelease = function (release, seq) {
+    // Once all batch insertion operations are computed, perform a leveldb
+    // batch insert, and update self.changes to reflect the new largest change#
+    // in the hyperlog.
     var next = after(function (err) {
       if (err) return release(cb, err)
 
@@ -332,25 +362,28 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
 
       if (!node.log) node.log = self.id
 
+      // Lock to ensure that nodes are processed asynchronously, but in
+      // sequence. Necessary to ensure that their sequence #s are correct.
       batchLock(function (release) {
         var fin = function (err) {
           done(err)
           release()
         }
 
+        // Check if the to-be-added node already exists in the hyperlog.
         self.get(node.key, function (_, clone) {
+          // It already exists, and it's in our local log.
           if (clone && clone.log === node.log) {
-            // leveldb dedupe
             node.seq = clone.seq
             node.change = clone.change
             return fin()
+          // It already exists; it was added in this batch op earlier on.
           } else if (added && added[node.key]) {
-            // param dedupe
             node.seq = added[node.key].seq
             node.change = added[node.key].change
             return fin()
+          // It's either brand new, or exists already in another log.
           } else {
-            // new node for this log
             node.seq = seq + 1 + idx
             node.change = self.changes + 1 + idx
             idx++
@@ -358,6 +391,7 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
 
           if (added) added[node.key] = node
 
+          // Create a new leveldb batch operation for this node.
           addBatch(self, node, lns, batch, opts, function (err, node) {
             if (err) {
               self.emit('reject', node)
@@ -378,6 +412,8 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
     else self.lock(onlocked)
   })
 
+  // Produce a hyperlog from each document to be inserted. This includes
+  // computing its hash.
   docs.forEach(function (doc, index) {
     var done = next()
     var postHashing = function (err, key) {
