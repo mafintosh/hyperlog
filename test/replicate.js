@@ -161,7 +161,6 @@ tape('shared history with duplicates', function (t) {
         t.error(err)
         t.equals(nodes[0].change, 1)
         t.equals(nodes[1].change, 2)
-        hyper2.db.createReadStream().on('data', console.log)
         sync(hyper1, hyper2, function (err) {
           t.error(err)
           t.end()
