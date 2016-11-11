@@ -144,3 +144,29 @@ tape('process', function (t) {
     })
   })
 })
+
+// bugfix: previously replication would not terminate
+tape('shared history with duplicates', function (t) {
+  var hyper1 = hyperlog(memdb())
+  var hyper2 = hyperlog(memdb())
+
+  var doc1 = { links: [], value: 'a' }
+  var doc2 = { links: [], value: 'b' }
+
+  hyper1.batch([doc1], function (err) {
+    t.error(err)
+    sync(hyper1, hyper2, function (err) {
+      t.error(err)
+      hyper2.batch([doc1, doc2], function (err, nodes) {
+        t.error(err)
+        t.equals(nodes[0].change, 1)
+        t.equals(nodes[1].change, 2)
+        hyper2.db.createReadStream().on('data', console.log)
+        sync(hyper1, hyper2, function (err) {
+          t.error(err)
+          t.end()
+        })
+      })
+    })
+  })
+})
