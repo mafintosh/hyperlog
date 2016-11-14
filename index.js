@@ -184,7 +184,7 @@ var addBatch = function (dag, node, logLinks, batch, opts, cb) {
     if (!dag.sign || node.signature) return done()
     dag.sign(node, function (err, sig) {
       if (err) return cb(err)
-      node.identity = dag.identity
+      if (!node.identity) node.identity = dag.identity
       node.signature = sig
       done()
     })
@@ -436,7 +436,7 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
     var node = {
       log: opts.log || self.id,
       key: null,
-      identity: opts.identity || null,
+      identity: doc.identity || opts.identity || null,
       signature: opts.signature || null,
       value: encodedValue,
       links: links
