@@ -393,13 +393,13 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
           if (added) added[node.key] = node
 
           // Create a new leveldb batch operation for this node.
-          addBatch(self, node, lns, batch, opts, function (err, node) {
+          addBatch(self, node, lns, batch, opts, function (err, newNode) {
             if (err) {
               self.emit('reject', node)
               return fin(err)
             }
-            node.value = encoder.decode(node.value, opts.valueEncoding || self.valueEncoding)
-            nodes[index] = node
+            newNode.value = encoder.decode(newNode.value, opts.valueEncoding || self.valueEncoding)
+            nodes[index] = newNode
             fin()
           })
         })
