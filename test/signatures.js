@@ -22,6 +22,8 @@ tape('sign', function (t) {
 })
 
 tape('sign fails', function (t) {
+  t.plan(2)
+
   var log = hyperlog(memdb(), {
     identity: new Buffer('i-am-a-public-key'),
     sign: function (node, cb) {
@@ -29,9 +31,12 @@ tape('sign fails', function (t) {
     }
   })
 
+  log.on('reject', function (node) {
+    t.ok(node)
+  })
+
   log.add(null, 'hello', function (err) {
     t.same(err && err.message, 'lol', 'had error')
-    t.end()
   })
 })
 
