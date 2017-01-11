@@ -422,7 +422,10 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
 
       node.key = key
       getLinks(self, id, links, function (err, lns) {
-        if (err) return done(err)
+        if (err) {
+          self.emit('reject', node)
+          return done(err)
+        }
         logLinks[index] = lns
         done()
       })
