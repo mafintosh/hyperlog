@@ -95,3 +95,19 @@ tape('deduplicates -- same batch', function (t) {
     })
   })
 })
+
+tape('bug repro: bad insert links results in correct preadd/add/reject counts', function (t) {
+  var hyper = hyperlog(memdb())
+
+  var pending = 0
+  hyper.on('preadd', function (node) { pending++ })
+  hyper.on('add', function (node) { pending-- })
+  hyper.on('reject', function (node) { pending-- })
+
+  hyper.add(['123'], 'hello', function (err, node) {
+    t.ok(err)
+
+    t.equal(pending, 0)
+    t.end()
+  })
+})
