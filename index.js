@@ -391,11 +391,8 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
     }
   ], function (err, nodes) {
     // release lock, if necessary
-    if (lockRelease) {
-      return lockRelease(onUnlocked, err)
-    } else {
-      onUnlocked(err)
-    }
+    if (lockRelease) return lockRelease(onUnlocked, err)
+    onUnlocked(err)
 
     function onUnlocked (err) {
       // Error; all nodes were rejected.
@@ -458,9 +455,7 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
       self.ready(function () {
         self.logs.head(id, function (err, seq) {
           if (err) return release(cb, err)
-          else {
-            done(null, seq, release)
-          }
+          done(null, seq, release)
         })
       })
     }
@@ -532,7 +527,7 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
       }),
       function (err) {
         if (err) return done(err)
-        else done(null, nodes, batch)
+        done(null, nodes, batch)
       }
     )
 
