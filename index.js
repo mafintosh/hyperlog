@@ -15,6 +15,8 @@ var messages = require('./lib/messages')
 var hash = require('./lib/hash')
 var encoder = require('./lib/encode')
 var defined = require('defined')
+var parallel = require('run-parallel')
+var waterfall = require('run-waterfall')
 
 var ID = '!!id'
 var CHANGES = '!changes!'
@@ -146,7 +148,8 @@ var toKey = function (link) {
 
 // Adds a new hyperlog node to an existing array of leveldb batch insertions.
 // This includes performing crypto signing and verification.
-var addBatch = function (dag, node, logLinks, batch, opts, cb) {
+// Performs deduplication; returns the existing node if alreay present in the hyperlog.
+var addBatchAndDedupe = function (dag, node, logLinks, batch, opts, cb) {
   if (opts.hash && node.key !== opts.hash) return cb(CHECKSUM_MISMATCH)
   if (opts.seq && node.seq !== opts.seq) return cb(INVALID_LOG)
 
@@ -309,6 +312,7 @@ Hyperlog.prototype.add = function (links, value, opts, cb) {
 }
 
 Hyperlog.prototype.batch = function (docs, opts, cb) {
+  // 0. preamble
   if (typeof opts === 'function') {
     cb = opts
     opts = {}
@@ -323,120 +327,229 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
   var id = opts.log || self.id
   opts.log = id
 
-  var nodes = new Array(docs.length)
-  var logLinks = new Array(docs.length)
-  var batch = [] // dynamic length
+  var logLinks = {}
+  var lockRelease = null
+  var latestSeq
 
-  var onlocked = function (release) {
-    self.ready(function () {
-      self.logs.head(id, function (err, seq) {
-        if (err) return release(cb, err)
-        else batchAndRelease(release, seq)
-      })
-    })
+  // Bubble up errors on non-batch (1 element) calls.
+  var bubbleUpErrors = false
+  if (docs.length === 1) {
+    bubbleUpErrors = true
   }
 
-  var batchAndRelease = function (release, seq) {
-    // Once all batch insertion operations are computed, perform a leveldb
-    // batch insert, and update self.changes to reflect the new largest change#
-    // in the hyperlog.
-    var next = after(function (err) {
-      if (err) return release(cb, err)
+  // 1. construct initial hyperlog "node" for each of "docs"
+  var nodes = docs.map(function (doc) {
+    return constructInitialNode(doc, opts)
+  })
 
-      self.db.batch(batch, function (err) {
-        if (err) return release(cb, err)
+  // 2. emit all preadd events
+  nodes.forEach(function (node) {
+    self.emit('preadd', node)
+  })
 
-        self.changes = nodes.reduce(maxChange, self.changes)
+  waterfall([
+    // 3. lock the hyperlog (if needed)
+    // 4. wait until the hyperlog is 'ready'
+    // 5. retrieve the seq# of this hyperlog's head
+    lockAndGetSeqNumber,
 
-        for (var i = 0; i < nodes.length; i++) self.emit('add', nodes[i])
+    // 3. hash (async/sync) all nodes
+    // 4. retrieve + set 'getLinks' for each node
+    function (seq, release, done) {
+      lockRelease = release
+      latestSeq = seq
 
-        release(cb, null, nodes)
+      hashNodesAndFindLinks(nodes, done)
+    },
+
+    // 8. dedupe the node against the params AND the hyperlog (in sequence)
+    function (nodes, done) {
+      dedupeNodes(nodes, latestSeq, done)
+    },
+
+    // 9. create each node's leveldb batch operation object
+    function (nodes, done) {
+      computeBatchNodeOperations(nodes, done)
+    },
+
+    // 10. perform the leveldb batch op
+    function (nodes, batchOps, done) {
+      self.db.batch(batchOps, function (err) {
+        if (err) {
+          nodes.forEach(rejectNode)
+          return done(err)
+        }
+        done(null, nodes)
       })
-    })
+    },
+
+    // 11. update the hyperlog's change#
+    // 12. emit all add/reject events
+    function (nodes, done) {
+      self.changes = nodes.reduce(maxChange, self.changes)
+      done(null, nodes)
+    }
+  ], function (err, nodes) {
+    // release lock, if necessary
+    if (lockRelease) return lockRelease(onUnlocked, err)
+    onUnlocked(err)
+
+    function onUnlocked (err) {
+      // Error; all nodes were rejected.
+      if (err) return cb(err)
+
+      // Emit add events.
+      nodes.forEach(function (node) {
+        self.emit('add', node)
+      })
+
+      cb(null, nodes)
+    }
+  })
+
+  function rejectNode (node) {
+    self.emit('reject', node)
+  }
+
+  // Hashes and finds links for the given nodes. If some nodes fail to hash to
+  // have their links found, they are rejected and not returned in the results.
+  function hashNodesAndFindLinks (nodes, done) {
+    var goodNodes = []
+
+    parallel(
+      nodes.map(function (node) {
+        return function (done) {
+          hashNode(node, function (err, key) {
+            if (err) {
+              rejectNode(node)
+              return done(bubbleUpErrors ? err : null)
+            }
+            node.key = key
+
+            getLinks(self, id, node.links, function (err, links) {
+              if (err) {
+                rejectNode(node)
+                return done(bubbleUpErrors ? err : null)
+              }
+              logLinks[node.key] = links
+
+              if (!node.log) node.log = self.id
+
+              goodNodes.push(node)
+              done()
+            })
+          })
+        }
+      }),
+      function (err) {
+        done(err, goodNodes)
+      }
+    )
+  }
+
+  function lockAndGetSeqNumber (done) {
+    if (opts.release) onlocked(opts.release)
+    else self.lock(onlocked)
+
+    function onlocked (release) {
+      self.ready(function () {
+        self.logs.head(id, function (err, seq) {
+          if (err) return release(cb, err)
+          done(null, seq, release)
+        })
+      })
+    }
+  }
+
+  function dedupeNodes (nodes, seq, done) {
+    var goodNodes = []
 
     var added = nodes.length > 1 ? {} : null
     var seqIdx = 1
     var changeIdx = 1
-    var batchLock = mutexify()
 
-    nodes.forEach(function (node, index) {
-      var done = next()
-      var lns = logLinks[index]
+    waterfall(
+      nodes.map(function (node) {
+        return function (done) {
+          dedupeNode(node, done)
+        }
+      }),
+      function (err) {
+        done(err, goodNodes)
+      }
+    )
 
-      if (!node.log) node.log = self.id
-
-      // Lock to ensure that nodes are processed asynchronously, but in
-      // sequence. Necessary to ensure that their sequence #s are correct.
-      batchLock(function (release) {
-        var fin = function (err) {
-          done(err)
-          release()
+    function dedupeNode (node, done) {
+      // Check if the to-be-added node already exists in the hyperlog.
+      self.get(node.key, function (_, clone) {
+        // It already exists
+        if (clone) {
+          node.seq = seq + (seqIdx++)
+          node.change = clone.change
+        // It already exists; it was added in this batch op earlier on.
+        } else if (added && added[node.key]) {
+          node.seq = added[node.key].seq
+          node.change = added[node.key].change
+          rejectNode(node)
+          return done()
+        } else {
+          // new node across all logs
+          node.seq = seq + (seqIdx++)
+          node.change = self.changes + (changeIdx++)
         }
 
-        // Check if the to-be-added node already exists in the hyperlog.
-        self.get(node.key, function (_, clone) {
-          // It already exists
-          if (clone) {
-            node.seq = seq + (seqIdx++)
-            node.change = clone.change
-          // It already exists; it was added in this batch op earlier on.
-          } else if (added && added[node.key]) {
-            node.seq = added[node.key].seq
-            node.change = added[node.key].change
-            return fin()
-          } else {
-            // new node across all logs
-            node.seq = seq + (seqIdx++)
-            node.change = self.changes + (changeIdx++)
-          }
+        if (added) added[node.key] = node
 
-          if (added) added[node.key] = node
+        goodNodes.push(node)
 
-          // Create a new leveldb batch operation for this node.
-          addBatch(self, node, lns, batch, opts, function (err, newNode) {
-            if (err) {
-              self.emit('reject', node)
-              return fin(err)
-            }
-            newNode.value = encoder.decode(newNode.value, opts.valueEncoding || self.valueEncoding)
-            nodes[index] = newNode
-            fin()
-          })
-        })
-      })
-    })
-  }
-
-  var next = after(function (err) {
-    if (err) return cb(err)
-    if (opts.release) onlocked(opts.release)
-    else self.lock(onlocked)
-  })
-
-  // Produce a hyperlog from each document to be inserted. This includes
-  // computing its hash.
-  docs.forEach(function (doc, index) {
-    var done = next()
-    var postHashing = function (err, key) {
-      if (err) return done(err)
-
-      node.key = key
-      getLinks(self, id, links, function (err, lns) {
-        if (err) {
-          self.emit('reject', node)
-          return done(err)
-        }
-        logLinks[index] = lns
         done()
       })
     }
+  }
 
+  function computeBatchNodeOperations (nodes, done) {
+    var batch = []
+    var goodNodes = []
+
+    waterfall(
+      nodes.map(function (node) {
+        return function (done) {
+          computeNodeBatchOp(node, function (err, ops) {
+            if (err) {
+              rejectNode(node)
+              return done(bubbleUpErrors ? err : null)
+            }
+            batch = batch.concat(ops)
+            goodNodes.push(node)
+            done()
+          })
+        }
+      }),
+      function (err) {
+        if (err) return done(err)
+        done(null, nodes, batch)
+      }
+    )
+
+    // Create a new leveldb batch operation for this node.
+    function computeNodeBatchOp (node, done) {
+      var batch = []
+      var links = logLinks[node.key]
+      addBatchAndDedupe(self, node, links, batch, opts, function (err, newNode) {
+        if (err) return done(err)
+        newNode.value = encoder.decode(newNode.value, opts.valueEncoding || self.valueEncoding)
+        done(null, batch)
+      })
+    }
+  }
+
+  function constructInitialNode (doc, opts) {
     var links = doc.links || []
     if (!Array.isArray(links)) links = [links]
     links = links.map(toKey)
 
     var encodedValue = encoder.encode(doc.value, opts.valueEncoding || self.valueEncoding)
-    var node = {
+    return {
       log: opts.log || self.id,
       key: null,
       identity: doc.identity || opts.identity || null,
@@ -444,18 +557,16 @@ Hyperlog.prototype.batch = function (docs, opts, cb) {
       value: encodedValue,
       links: links
     }
+  }
 
-    nodes[index] = node
-
+  function hashNode (node, done) {
     if (self.asyncHash) {
-      self.emit('preadd', node)
-      self.asyncHash(links, encodedValue, postHashing)
+      self.asyncHash(node.links, node.value, done)
     } else {
-      node.key = self.hash(links, encodedValue)
-      self.emit('preadd', node)
-      postHashing(null, node.key)
+      var key = self.hash(node.links, node.value)
+      done(null, key)
     }
-  })
+  }
 }
 
 Hyperlog.prototype.append = function (value, opts, cb) {
