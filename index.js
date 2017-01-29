@@ -255,7 +255,7 @@ var createLiveStream = function (dag, opts) {
     read(0, cb)
   }
 
-  dag.on('add', kick)
+  if (dag.listeners('add') < 1) dag.on('add', kick)
   dag.ready(kick)
 
   var rs = from.obj(read)
